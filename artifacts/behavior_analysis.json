@@ -1,0 +1,289 @@
+{
+  "summary": {
+    "character": "FLEX",
+    "games_analyzed": 20,
+    "win_rate": 0.9,
+    "avg_damage_dealt": 20.95,
+    "avg_stocks_taken": 2.9,
+    "playstyle": "Hyper-Aggressive"
+  },
+  "action_distribution": {
+    "Right+Attack": 0.09910552132661202,
+    "Down+Attack": 0.11899791231732777,
+    "Up+Attack": 0.10137990732725699,
+    "Jump": 0.08982127399562095,
+    "Attack": 0.0773121509920736,
+    "Right": 0.10718468353785834,
+    "Nothing": 0.1149583312117046,
+    "Left+Attack": 0.08691888589032028,
+    "Left": 0.09099241305565456,
+    "Down": 0.11332892034557089
+  },
+  "behavior_ratios": {
+    "attack_ratio": 0.48371437785359067,
+    "movement_ratio": 0.1981770965935129,
+    "jump_ratio": 0.08982127399562095,
+    "idle_ratio": 0.1149583312117046
+  },
+  "combo_patterns": {
+    "short_combos": [
+      [
+        [
+          "Down+Attack",
+          "Down+Attack"
+        ],
+        959
+      ],
+      [
+        [
+          "Up+Attack",
+          "Up+Attack"
+        ],
+        734
+      ],
+      [
+        [
+          "Down+Attack",
+          "Up+Attack"
+        ],
+        729
+      ],
+      [
+        [
+          "Up+Attack",
+          "Down+Attack"
+        ],
+        719
+      ],
+      [
+        [
+          "Right+Attack",
+          "Right+Attack"
+        ],
+        691
+      ]
+    ],
+    "medium_combos": [
+      [
+        [
+          "Down+Attack",
+          "Down+Attack",
+          "Down+Attack",
+          "Right"
+        ],
+        26
+      ],
+      [
+        [
+          "Right+Attack",
+          "Right+Attack",
+          "Right+Attack",
+          "Right+Attack"
+        ],
+        24
+      ],
+      [
+        [
+          "Down+Attack",
+          "Down+Attack",
+          "Down+Attack",
+          "Down+Attack"
+        ],
+        22
+      ],
+      [
+        [
+          "Jump",
+          "Down+Attack",
+          "Down+Attack",
+          "Down+Attack"
+        ],
+        19
+      ],
+      [
+        [
+          "Down+Attack",
+          "Nothing",
+          "Down+Attack",
+          "Down+Attack"
+        ],
+        19
+      ]
+    ]
+  },
+  "common_sequences": [
+    [
+      [
+        "Down",
+        "Down"
+      ],
+      1074
+    ],
+    [
+      [
+        "Down+Attack",
+        "Down+Attack"
+      ],
+      959
+    ],
+    [
+      [
+        "Nothing",
+        "Nothing"
+      ],
+      876
+    ],
+    [
+      [
+        "Nothing",
+        "Down+Attack"
+      ],
+      824
+    ],
+    [
+      [
+        "Down+Attack",
+        "Nothing"
+      ],
+      777
+    ],
+    [
+      [
+        "Nothing",
+        "Down"
+      ],
+      765
+    ],
+    [
+      [
+        "Down+Attack",
+        "Down"
+      ],
+      758
+    ],
+    [
+      [
+        "Down+Attack",
+        "Right"
+      ],
+      752
+    ],
+    [
+      [
+        "Right",
+        "Nothing"
+      ],
+      738
+    ],
+    [
+      [
+        "Up+Attack",
+        "Up+Attack"
+      ],
+      734
+    ]
+  ],
+  "edge_behavior": {
+    "near_right_edge": {
+      "sample_size": 47190,
+      "top_actions": [
+        [
+          "Down",
+          0.11843610934520026
+        ],
+        [
+          "Down+Attack",
+          0.11676202585293495
+        ],
+        [
+          "Nothing",
+          0.1132443314261496
+        ],
+        [
+          "Right",
+          0.10430175884721339
+        ],
+        [
+          "Right+Attack",
+          0.10360245814791269
+        ]
+      ],
+      "attack_ratio": 0.4828353464717101,
+      "movement_ratio": 0.19749947022674294
+    },
+    "center_stage": {
+      "sample_size": 7213,
+      "top_actions": [
+        [
+          "Up+Attack",
+          0.1531956190212117
+        ],
+        [
+          "Down+Attack",
+          0.12893386940246776
+        ],
+        [
+          "Nothing",
+          0.12324968806321919
+        ],
+        [
+          "Right",
+          0.12061555524746985
+        ],
+        [
+          "Down",
+          0.09330375710522668
+        ]
+      ],
+      "attack_ratio": 0.4903646194371274,
+      "movement_ratio": 0.20379869679744905
+    },
+    "offstage_right": {
+      "sample_size": 42898,
+      "top_actions": [
+        [
+          "Down",
+          0.11981910578581752
+        ],
+        [
+          "Down+Attack",
+          0.11620588372418295
+        ],
+        [
+          "Nothing",
+          0.11350179495547578
+        ],
+        [
+          "Right",
+          0.10527297309897897
+        ],
+        [
+          "Right+Attack",
+          0.10284861765117255
+        ]
+      ],
+      "attack_ratio": 0.48149097860040097,
+      "movement_ratio": 0.19998601333395497
+    }
+  },
+  "damage_state_behavior": {
+    "own_damage_behavior": {
+      "low_damage": {
+        "attack_ratio": 0.4840267269666933,
+        "defensive_ratio": 0.40255368345886394,
+        "top_action": "Down+Attack"
+      },
+      "mid_damage": {
+        "attack_ratio": 0.3,
+        "defensive_ratio": 0.64,
+        "top_action": "Left"
+      }
+    },
+    "opponent_damage_behavior": {
+      "opponent_low": {
+        "attack_ratio": 0.48371437785359067,
+        "top_action": "Down+Attack"
+      }
+    }
+  }
+}
