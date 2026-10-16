@@ -123,8 +123,23 @@ class Theme:
 
     def ensure_built(self):
         if not self.built:
+            self._loading_card()
             self.build()
             self.built = True
+
+    def _loading_card(self):
+        """Shown while a theme generates its art (first launch; later loads hit the disk cache)."""
+        try:
+            from renderer import _x11
+            r = self.r
+            self.g.fill_rect(0, 0, self.w, self.h, (0, 0, 0))
+            r.set_color_rgb(170, 170, 180)
+            msg = f"Painting {self.title}..."
+            _x11.XDrawString(r.display, r.buffer, r.gc, self.w // 2 - len(msg) * 3, self.h // 2,
+                             msg.encode(), len(msg))
+            r.flip()
+        except Exception:
+            pass
 
     def build(self):
         """Create fonts and theme-wide assets. Subclasses extend."""

@@ -612,8 +612,14 @@ class X11Renderer:
         return self.theme is not None and not self.theme.classic
 
     def set_theme(self, name: str):
+        """Switch theme. Instances are kept so switching back reuses their uploaded art."""
         import themes
-        self.theme = themes.create(name, self)
+        cache = self.__dict__.setdefault('_themes', {})
+        theme = cache.get(name)
+        if theme is None:
+            theme = themes.create(name, self)
+            cache[theme.name] = theme
+        self.theme = theme
         self.effects = getattr(self, 'effects', [])
 
     def cycle_theme(self) -> str:
