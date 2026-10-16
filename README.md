@@ -1,102 +1,87 @@
 # Stick Figure Fighter
 
-A 2D platform fighting game built by AtlasForge with AI-trained fighters.
+A 2D Smash-style platform fighter in pure Python, rendered with raw X11
+calls through ctypes. Originally built by the AtlasForge autonomous R&D system
+(January 2026), with self-play reinforcement-learning experiments on top.
 
-## Overview
+## Layout
 
-**Built by**: AtlasForge autonomous R&D system
-**Build time**: 1 hour (initial implementation)
-**Training**: 15 hours of self-play AI learning
-**Date**: January 2026
+```
+engine/            Reusable platform-fighter simulation (stdlib only). See engine/README.md
+characters.py      The four characters: stats, movesets, specials
+stages.py          Battlefield and Final Destination
+match_setup.py     create_game(): builds a match from character and stage names
+ml_interface.py    Observation and action encoding the RL policies use
+game_engine.py     Compatibility shim that re-exports the above under the old names
 
-## Features
+main.py            Game entry point: menus, match flow, results
+renderer.py        X11 renderer: stick-figure poses, effects, HUD
+input_system.py    Keyboard input       gamepad_input.py   evdev gamepads
+audio_system.py    Synthesized audio    menu_system.py     Menus
+training_mode.py   Training mode (CPU dummy, frame data, move list)
+replay_system.py   Input recording and playback
+settings.py        Persistent settings
 
-- **4 Characters**: FLEX (balanced), RUSH (fast), ZONE (ranged), GRAB (grappler)
-- **Platform Fighter Physics**: Smash Bros-style gameplay
-- **AI-Trained Fighters**: Neural network-based decision making
-- **Custom Everything**: Even the autograd library (tensor_gpu.py) is custom-built
-- **X11 Renderer**: Pure Python, no game engine dependencies
+policy.py, trainer.py, experience.py, self_play.py, train_self_play.py, evaluate.py
+                   PPO self-play training (PyTorch)
+tensor_gpu.py      Experimental CuPy autograd (only evaluate.py touches it, for set_device)
 
-## Recent Fixes (January 18, 2026)
-
-### OGC Collision Fix
-- Applied concepts from Offset Geometric Contact (OGC) research paper (SIGGRAPH 2025, University of Utah)
-- Implemented proactive penetration prevention with 5px contact offset zones
-- Zero penetration detected across all tests
-
-### Coordinate System Fix
-- **Problem**: Fighters' feet were clipping 40px through platforms ("crotch-running")
-- **Root cause**: Mismatch between collision system (assumed position.y = feet) and rendering (drew feet at position.y + 40px)
-- **Solution**: Added `FOOT_OFFSET = 40.0` constant and aligned both systems
-- **Result**: Fighters now stand with feet EXACTLY on platform surfaces
-
-## Running the Game
-
-### Requirements
-- Python 3.x
-- X11 display server
-- Dependencies: pygame, numpy
-
-### Launch
-```bash
-# Training mode
-python3 main.py --training
-
-# Quick mode
-python3 main.py --quick
-
-# AI vs AI demo
-python3 simple_ai_demo.py  # (if available in parent directory)
+tests/             pytest: engine unit tests, golden-trace regression, character tests
+archive/           Historical one-off scripts and research notes, not used
 ```
 
-## Technical Details
+## Characters
 
-### Physics
-- 60 FPS gameplay
-- Custom collision detection with OGC penetration prevention
-- Platform fighter mechanics (stocks, knockback, damage percent)
+| | Style | Signature |
+|---|---|---|
+| **RUSH** | Fast rushdown, light | Down-B counter (1.5x counterattack) |
+| **ZONE** | Ranged zoner | Neutral-B energy ball, side-B beam |
+| **GRAB** | Slow heavy grappler | Neutral-B armored charge (super armor) |
+| **FLEX** | All-rounder | Neutral-B arcing fireball, down-B reflector |
 
-### Rendering
-- X11-based rendering via renderer.py
-- Stick figure character representation
-- Real-time visual feedback (damage flash, super armor glow, counter stance)
+## Running
 
-### AI Training
-- Self-play reinforcement learning
-- Policy networks with experience replay
-- Character-specific strategies learned through gameplay
+Requirements: Python 3.10+, an X11 display, `numpy`. Optional: `sounddevice`
+for audio. PyTorch is needed only for RL training.
 
-## Files Modified by Forge Missions
+```bash
+python3 main.py                                 # menus
+python3 main.py --quick --p1 RUSH --p2 ZONE     # straight into a match
+python3 main.py --quick --stage final_destination
+python3 main.py --training --p1 FLEX            # training mode
+python3 main.py --test                          # subsystem smoke test
+```
 
-### Mission: mission_ogc_collision_fix
-- `game_engine.py` - Added contact_offset zones, displacement bounds
-- 11 test files created for validation
-- 22 visual verification screenshots captured
+Controls: P1 uses WASD + Space/J/K/L, P2 uses arrows + Enter/Numpad 1-3.
+P pauses, Tab shows hitboxes, Esc quits.
 
-### Mission: mission_25f842e1 (Coordinate Fix)
-- `game_engine.py` (line 69) - Added FOOT_OFFSET constant
-- `game_engine.py` (line 1821) - Updated landing calculation
-- `renderer.py` - Added coordinate system documentation
+On a machine without a display, run it against a virtual X server:
+`Xvfb :99 & python3 main.py --display :99 --quick --max-frames 600`.
 
-## Performance
+## Tests
 
-- **Rendering**: 60+ FPS at 1280x720
-- **Collision overhead**: < 0.1ms per frame
-- **AI decision time**: Negligible (pre-trained network inference)
+```bash
+pip install pytest
+python3 -m pytest tests
+```
 
-## Known Issues
+`tests/test_golden.py` replays 18 deterministic matches (every character pairing)
+and checks a per-frame hash of the simulation state, so refactors can't
+silently change gameplay. After an intentional gameplay change, re-record with
+`python3 tests/record_golden.py` and commit the updated `tests/golden/traces.json`.
 
-None! Both collision bugs (penetration and coordinate mismatch) have been resolved.
+## Notes on the trained AI
+
+The RL policies were trained against the simulation before the October 2026
+fixes. In that version fighters couldn't walk off ledges, every successful
+counter permanently stacked another 1.5x on RUSH's counter for the rest of the
+process, and multi-frame hitboxes hit shields every active frame. Retrain
+before trusting any old checkpoint. The game itself (`main.py`) doesn't load a
+policy.
 
 ## Credits
 
-- **Built by**: AtlasForge autonomous R&D system
-- **Research**: OGC paper (University of Utah Graphics Lab)
-- **Debugging & Fix**: AtlasForge missions mission_ogc_collision_fix and mission_25f842e1
-- **Collaboration**: Rabbit & Claude (Fourth Strawberry session, January 18, 2026)
-
----
-
-**Status**: Production-ready
-**Last Updated**: January 18, 2026
-**Confidence**: 95% (VERY HIGH)
+- Built by the AtlasForge autonomous R&D system
+- Platform contact offset idea from the Offset Geometric Contact paper
+  (SIGGRAPH 2025, University of Utah Graphics Lab)
+- Rabbit & Claude

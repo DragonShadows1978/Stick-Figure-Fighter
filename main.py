@@ -38,6 +38,7 @@ Training Mode:
 import sys
 import time
 import argparse
+import os
 import math
 from typing import Optional, List
 from enum import Enum, auto
@@ -2012,8 +2013,8 @@ def quick_test():
 
 def main():
     parser = argparse.ArgumentParser(description="Stick Figure Fighter")
-    parser.add_argument('--display', type=str, default=':99',
-                       help='X11 display (default: :99)')
+    parser.add_argument('--display', type=str, default=os.environ.get('DISPLAY', ':0'),
+                       help='X11 display (default: $DISPLAY, else :0)')
     parser.add_argument('--headless', action='store_true',
                        help='Run in headless mode (no rendering)')
     parser.add_argument('--quick', action='store_true',
