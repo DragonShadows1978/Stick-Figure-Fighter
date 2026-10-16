@@ -26,8 +26,42 @@ policy.py, trainer.py, experience.py, self_play.py, train_self_play.py, evaluate
                    PPO self-play training (PyTorch)
 tensor_gpu.py      Experimental CuPy autograd (only evaluate.py touches it, for set_device)
 
+gfx/, themes/, poses.py, menu_view.py, screens.py
+                   Theme system and XRender graphics (see "Visual themes")
+
 tests/             pytest: engine unit tests, golden-trace regression, character tests
 archive/           Historical one-off scripts and research notes, not used
+```
+
+## Visual themes
+
+The game ships with several complete art directions: stages, fighters, effects,
+HUD, menus and fonts all change together.
+
+| Theme | Look |
+|---|---|
+| **Neon Arcade** | Glowing light-tube fighters. Battlefield is a synthwave sunset with a scrolling grid; Final Destination is a cyber void with a wireframe planet |
+| **Sketchbook** (in progress) | Everything drawn in a school notebook: ink fighters with line boil, marker colors, comic hit bursts |
+| **Silhouette** (in progress) | Painterly dusk and moonlit skies with layered haze; fighters are silhouettes with a colored rim light |
+| **Classic** | The original look; also the automatic fallback when the X server lacks XRender |
+
+Press **F9** anywhere to cycle themes, or pick one under Settings → Gameplay →
+Visual Theme. `SFF_THEME=sketch python3 main.py` overrides it for one run.
+
+All art is generated in code at startup (numpy distance fields, gradients and
+noise), with no image files. It is cached under `~/.cache/stick-figure-fighter/`
+(override with `SFF_ASSET_CACHE`), so only the first launch of a theme spends a
+few seconds painting. Drawing goes through XRender for antialiasing and alpha
+blending.
+
+Layout:
+
+```
+gfx/        XRender bindings, Gfx drawing context, numpy rasterizer, stroke font, asset cache
+themes/     base.py (theme interface + match orchestration), neon.py, sketch.py, silhouette.py, classic.py
+poses.py    pose tables, Skeleton, PoseAnimator (walk cycle, attack phases, tumble)
+menu_view.py, screens.py   menus and in-game screens built from the active theme's UI kit
+tools/      theme_shot.py, menu_shot.py, screen_shot.py: render any theme/screen to PNG
 ```
 
 ## Characters
@@ -53,7 +87,7 @@ python3 main.py --test                          # subsystem smoke test
 ```
 
 Controls: P1 uses WASD + Space/J/K/L, P2 uses arrows + Enter/Numpad 1-3.
-P pauses, Tab shows hitboxes, Esc quits.
+P pauses, Tab shows hitboxes, F9 cycles visual themes, F10 shows FPS, Esc quits.
 
 On a machine without a display, run it against a virtual X server:
 `Xvfb :99 & python3 main.py --display :99 --quick --max-frames 600`.
