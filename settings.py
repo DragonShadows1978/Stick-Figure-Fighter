@@ -52,6 +52,8 @@ class GameplaySettings:
     # Cycle 17: Performance profiling
     show_fps: bool = False
     show_frame_graph: bool = False
+    # Visual theme: neon, sketch, silhouette or classic
+    theme: str = 'neon'
 
 
 @dataclass

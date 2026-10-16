@@ -21,6 +21,7 @@ from ctypes import (
     POINTER, Structure, byref, cast
 )
 import math
+import os
 import numpy as np
 from typing import Tuple, List, Optional
 from dataclasses import dataclass, field
@@ -29,6 +30,27 @@ from enum import Enum, auto
 from game_engine import (
     GameState, Fighter, Platform, FighterState, Projectile,
     CONFIG, Vector2, AABB, DodgeType, ParallaxLayer
+)
+from poses import (  # noqa: F401  (re-exported for older imports)
+    POSE_ATTACK,
+    POSE_ATTACK_WINDUP,
+    POSE_COUNTER,
+    POSE_DODGING,
+    POSE_ENTERING,
+    POSE_FALLING,
+    POSE_HITSTUN,
+    POSE_IDLE,
+    POSE_JUMPING,
+    POSE_JUMP_CROUCH,
+    POSE_JUMP_STRETCH,
+    POSE_LANDING_SQUASH,
+    POSE_REFLECTING,
+    POSE_SHIELDING,
+    POSE_SHIELD_STUN,
+    POSE_SPECIAL,
+    POSE_WALKING,
+    StickFigurePose,
+    get_pose_for_state,
 )
 
 
@@ -405,9 +427,59 @@ ClientMessage = 33
 # COLOR UTILITIES
 # =============================================================================
 
+_pixel_cache = {}
+
+_NAMED_COLORS = {
+    'black': (0, 0, 0),
+    'white': (255, 255, 255),
+    'red': (255, 80, 80),
+    'blue': (80, 80, 255),
+    'green': (80, 255, 80),
+    'yellow': (255, 255, 80),
+    'gray': (128, 128, 128),
+    'dark_gray': (64, 64, 64),
+    'platform': (100, 80, 60),
+    'platform_pass': (80, 100, 80),
+    'hitbox': (255, 0, 0),
+    'hurtbox': (0, 255, 0),
+    'p1': (255, 100, 100),
+    'p2': (100, 100, 255),
+    'damage_bar': (200, 50, 50),
+    'stock': (255, 200, 50),
+    'spark_white': (255, 255, 255),
+    'spark_yellow': (255, 230, 100),
+    'spark_orange': (255, 180, 80),
+    'shield_green': (100, 200, 100),
+    'shield_yellow': (200, 200, 100),
+    'shield_red': (200, 100, 100),
+    'counter_blue': (100, 150, 255),
+    'reflector_cyan': (100, 255, 255),
+    'armor_gold': (255, 200, 50),
+    'trail_cyan': (80, 180, 255),
+    'trail_orange': (255, 120, 50),
+}
+
+
+def _saved_theme() -> str:
+    try:
+        from settings import get_settings
+        return get_settings().gameplay.theme
+    except Exception:
+        return 'neon'
+
+
 def rgb_to_pixel(display: Display, screen: int, colormap: Colormap,
                  r: int, g: int, b: int) -> int:
-    """Convert RGB values to X11 pixel value."""
+    """Convert RGB values to X11 pixel value (cached: XAllocColor is a server round trip)."""
+    key = (r, g, b)
+    pixel = _pixel_cache.get(key)
+    if pixel is not None:
+        return pixel
+    _pixel_cache[key] = pixel = _alloc_pixel(display, colormap, r, g, b)
+    return pixel
+
+
+def _alloc_pixel(display, colormap, r, g, b) -> int:
     color = XColor()
     color.red = r * 257  # Scale 0-255 to 0-65535
     color.green = g * 257
@@ -426,408 +498,12 @@ def rgb_to_pixel(display: Display, screen: int, colormap: Colormap,
 # STICK FIGURE RENDERER
 # =============================================================================
 
-@dataclass
-class StickFigurePose:
-    """
-    Pose data for stick figure animation.
-
-    Coordinate System:
-    - All pose coordinates are relative to fighter.position
-    - hip_y=-10 means hip is 10 pixels ABOVE position.y
-    - foot offsets are relative to hip (typically +50 from hip)
-    - Actual feet render at: position.y + hip_y + foot_offset ≈ position.y + 40
-    - FOOT_OFFSET constant in game_engine.py defines this rendering offset
-    """
-    # Head position (relative to center)
-    head_y: float = -65
-    head_radius: float = 12
-
-    # Body (spine)
-    shoulder_y: float = -50
-    hip_y: float = -10
-
-    # Arms (relative to shoulder)
-    left_elbow: Tuple[float, float] = (-15, 5)
-    left_hand: Tuple[float, float] = (-25, 20)
-    right_elbow: Tuple[float, float] = (15, 5)
-    right_hand: Tuple[float, float] = (25, 20)
-
-    # Legs (relative to hip)
-    left_knee: Tuple[float, float] = (-10, 25)
-    left_foot: Tuple[float, float] = (-15, 50)
-    right_knee: Tuple[float, float] = (10, 25)
-    right_foot: Tuple[float, float] = (15, 50)
-
-
-# Pre-defined poses for different states
-POSE_IDLE = StickFigurePose()
-
-POSE_WALKING = StickFigurePose(
-    left_elbow=(-12, 8),
-    left_hand=(-18, 22),
-    right_elbow=(18, 2),
-    right_hand=(28, 15),
-    left_knee=(-15, 22),
-    left_foot=(-20, 48),
-    right_knee=(8, 28),
-    right_foot=(5, 52)
-)
-
-POSE_JUMPING = StickFigurePose(
-    head_y=-70,
-    shoulder_y=-55,
-    hip_y=-15,
-    left_elbow=(-20, -5),
-    left_hand=(-25, -15),
-    right_elbow=(20, -5),
-    right_hand=(25, -15),
-    left_knee=(-12, 15),
-    left_foot=(-15, 35),
-    right_knee=(12, 15),
-    right_foot=(15, 35)
-)
-
-POSE_FALLING = StickFigurePose(
-    head_y=-60,
-    shoulder_y=-45,
-    hip_y=-5,
-    left_elbow=(-18, 10),
-    left_hand=(-25, 25),
-    right_elbow=(18, 10),
-    right_hand=(25, 25),
-    left_knee=(-8, 20),
-    left_foot=(-12, 45),
-    right_knee=(8, 20),
-    right_foot=(12, 45)
-)
-
-POSE_ATTACK = StickFigurePose(
-    left_elbow=(-10, 5),
-    left_hand=(-15, 15),
-    right_elbow=(25, -10),
-    right_hand=(50, -5),
-    left_knee=(-12, 25),
-    left_foot=(-18, 48),
-    right_knee=(8, 28),
-    right_foot=(5, 52)
-)
-
-POSE_HITSTUN = StickFigurePose(
-    head_y=-58,
-    shoulder_y=-42,
-    hip_y=-8,
-    left_elbow=(-22, 15),
-    left_hand=(-30, 30),
-    right_elbow=(22, 15),
-    right_hand=(30, 30),
-    left_knee=(-15, 20),
-    left_foot=(-22, 42),
-    right_knee=(10, 22),
-    right_foot=(8, 45)
-)
-
-
-POSE_SPECIAL = StickFigurePose(
-    head_y=-68,
-    shoulder_y=-52,
-    hip_y=-12,
-    left_elbow=(-8, -8),
-    left_hand=(-12, -20),
-    right_elbow=(30, -15),
-    right_hand=(55, -20),  # Arm extended for special
-    left_knee=(-8, 25),
-    left_foot=(-10, 50),
-    right_knee=(12, 22),
-    right_foot=(15, 48)
-)
-
-POSE_SHIELDING = StickFigurePose(
-    head_y=-60,
-    shoulder_y=-45,
-    hip_y=-8,
-    left_elbow=(-5, 10),
-    left_hand=(5, 20),  # Arms crossed in front
-    right_elbow=(5, 10),
-    right_hand=(-5, 20),
-    left_knee=(-8, 22),
-    left_foot=(-10, 48),
-    right_knee=(8, 22),
-    right_foot=(10, 48)
-)
-
-POSE_DODGING = StickFigurePose(
-    head_y=-55,
-    shoulder_y=-40,
-    hip_y=-5,
-    left_elbow=(-18, 12),
-    left_hand=(-25, 25),
-    right_elbow=(18, 12),
-    right_hand=(25, 25),
-    left_knee=(-15, 18),
-    left_foot=(-20, 42),
-    right_knee=(5, 25),
-    right_foot=(0, 50)
-)
-
-POSE_COUNTER = StickFigurePose(
-    head_y=-65,
-    shoulder_y=-50,
-    hip_y=-10,
-    left_elbow=(-15, 0),
-    left_hand=(-10, 15),  # Defensive stance
-    right_elbow=(15, 0),
-    right_hand=(10, 15),
-    left_knee=(-12, 25),
-    left_foot=(-18, 50),
-    right_knee=(12, 25),
-    right_foot=(18, 50)
-)
-
-POSE_REFLECTING = StickFigurePose(
-    head_y=-65,
-    shoulder_y=-50,
-    hip_y=-10,
-    left_elbow=(-20, -5),
-    left_hand=(-30, 5),
-    right_elbow=(20, -5),
-    right_hand=(30, 5),  # Arms out creating reflector
-    left_knee=(-8, 25),
-    left_foot=(-12, 50),
-    right_knee=(8, 25),
-    right_foot=(12, 50)
-)
-
-POSE_SHIELD_STUN = StickFigurePose(
-    head_y=-55,
-    shoulder_y=-40,
-    hip_y=-5,
-    left_elbow=(-20, 20),
-    left_hand=(-25, 35),  # Arms limp/dizzy
-    right_elbow=(20, 20),
-    right_hand=(25, 35),
-    left_knee=(-8, 25),
-    left_foot=(-10, 50),
-    right_knee=(8, 25),
-    right_foot=(10, 50)
-)
-
-# =============================================================================
-# GAME FEEL POSES (Cycle 4)
-# =============================================================================
-
-# Landing squash - compressed pose for landing recovery
-POSE_LANDING_SQUASH = StickFigurePose(
-    head_y=-50,          # Head lower (squashed)
-    head_radius=10,      # Slightly compressed head
-    shoulder_y=-38,      # Shoulders compressed down
-    hip_y=-2,            # Hips near ground
-    left_elbow=(-18, 8),
-    left_hand=(-22, 22),
-    right_elbow=(18, 8),
-    right_hand=(22, 22),
-    left_knee=(-15, 18),   # Bent legs
-    left_foot=(-20, 38),   # Feet closer to hip
-    right_knee=(15, 18),
-    right_foot=(20, 38)
-)
-
-# Jump anticipation - crouch before jump
-POSE_JUMP_CROUCH = StickFigurePose(
-    head_y=-52,          # Crouched
-    head_radius=11,
-    shoulder_y=-40,
-    hip_y=-5,
-    left_elbow=(-15, 10),
-    left_hand=(-20, 25),
-    right_elbow=(15, 10),
-    right_hand=(20, 25),
-    left_knee=(-12, 20),   # Bent knees for crouch
-    left_foot=(-15, 42),
-    right_knee=(12, 20),
-    right_foot=(15, 42)
-)
-
-# Jump stretch - elongated at peak of jump
-POSE_JUMP_STRETCH = StickFigurePose(
-    head_y=-78,          # Head higher (stretched)
-    head_radius=13,      # Slightly stretched head
-    shoulder_y=-62,      # Shoulders stretched up
-    hip_y=-18,           # Hips higher
-    left_elbow=(-22, -10),
-    left_hand=(-28, -20),
-    right_elbow=(22, -10),
-    right_hand=(28, -20),
-    left_knee=(-10, 18),   # Legs slightly tucked
-    left_foot=(-12, 38),
-    right_knee=(10, 18),
-    right_foot=(12, 38)
-)
-
-# Attack wind-up (anticipation frame)
-POSE_ATTACK_WINDUP = StickFigurePose(
-    head_y=-62,
-    shoulder_y=-48,
-    hip_y=-12,
-    left_elbow=(-15, 5),
-    left_hand=(-20, 15),
-    right_elbow=(-10, 8),    # Arm pulled back for wind-up
-    right_hand=(-15, 20),
-    left_knee=(-10, 25),
-    left_foot=(-15, 50),
-    right_knee=(12, 25),
-    right_foot=(18, 50)
-)
-
-
-# =============================================================================
-# ENTRANCE POSES (Cycle 14)
-# =============================================================================
-
-# Entering pose - falling from sky with dramatic pose
-POSE_ENTERING = StickFigurePose(
-    head_y=-68,
-    head_radius=12,
-    shoulder_y=-52,
-    hip_y=-12,
-    left_elbow=(-22, -8),     # Arms spread wide
-    left_hand=(-35, -12),
-    right_elbow=(22, -8),
-    right_hand=(35, -12),
-    left_knee=(-10, 22),      # Legs together
-    left_foot=(-12, 48),
-    right_knee=(10, 22),
-    right_foot=(12, 48)
-)
-
-
-def get_pose_for_state(state: FighterState, frame: int, fighter=None) -> StickFigurePose:
-    """Get the appropriate pose for a fighter state with game feel improvements (Cycle 4)."""
-
-    # ==========================================================================
-    # IDLE with breathing animation (Cycle 4)
-    # ==========================================================================
-    if state == FighterState.IDLE:
-        # Subtle breathing animation - head bobs slightly every ~60 frames
-        breath_cycle = math.sin(frame * 0.1) * 2  # Subtle oscillation
-        # Create a breathing variation of POSE_IDLE
-        return StickFigurePose(
-            head_y=POSE_IDLE.head_y + breath_cycle,
-            head_radius=POSE_IDLE.head_radius,
-            shoulder_y=POSE_IDLE.shoulder_y + breath_cycle * 0.5,
-            hip_y=POSE_IDLE.hip_y,
-            left_elbow=POSE_IDLE.left_elbow,
-            left_hand=POSE_IDLE.left_hand,
-            right_elbow=POSE_IDLE.right_elbow,
-            right_hand=POSE_IDLE.right_hand,
-            left_knee=POSE_IDLE.left_knee,
-            left_foot=POSE_IDLE.left_foot,
-            right_knee=POSE_IDLE.right_knee,
-            right_foot=POSE_IDLE.right_foot
-        )
-
-    # ==========================================================================
-    # Walking with smoother animation
-    # ==========================================================================
-    elif state in (FighterState.WALKING, FighterState.RUNNING):
-        # Smoother walk cycle with arm swing
-        walk_phase = math.sin(frame * 0.25)  # Smoother walk cycle
-        if walk_phase > 0:
-            return POSE_WALKING
-        else:
-            return StickFigurePose(
-                left_elbow=(18, 2),
-                left_hand=(28, 15),
-                right_elbow=(-12, 8),
-                right_hand=(-18, 22),
-                left_knee=(8, 28),
-                left_foot=(5, 52),
-                right_knee=(-15, 22),
-                right_foot=(-20, 48)
-            )
-
-    # ==========================================================================
-    # Jump with squash/stretch (Cycle 4)
-    # ==========================================================================
-    elif state == FighterState.JUMPING:
-        # Get vertical velocity if fighter is available
-        if fighter is not None:
-            vy = fighter.velocity.y
-            state_frame = fighter.state_frame
-
-            # First 3 frames: stretch as we leave ground (upward momentum)
-            if state_frame < 3 and vy < -5:
-                return POSE_JUMP_STRETCH
-
-            # Rising: normal jump pose
-            elif vy < 0:
-                return POSE_JUMPING
-
-            # Peak of jump: slight float pose
-            elif abs(vy) < 3:
-                return POSE_JUMP_STRETCH
-
-            # Falling: transition to fall pose
-            else:
-                return POSE_FALLING
-        return POSE_JUMPING
-
-    # ==========================================================================
-    # Landing with squash (Cycle 4)
-    # ==========================================================================
-    elif state == FighterState.LANDING:
-        # Check landing frame for squash effect
-        if fighter is not None and fighter.state_frame < 4:
-            return POSE_LANDING_SQUASH
-        return POSE_IDLE
-
-    elif state == FighterState.FALLING:
-        return POSE_FALLING
-
-    # ==========================================================================
-    # Attack with anticipation frames (Cycle 4)
-    # ==========================================================================
-    elif state == FighterState.ATTACKING:
-        # First 2-3 frames: wind-up/anticipation
-        if fighter is not None and fighter.attack_frame < 3:
-            attack_data = fighter.current_attack
-            # Only show wind-up for attacks with >5 frame startup
-            if attack_data is not None and attack_data.startup_frames > 5:
-                return POSE_ATTACK_WINDUP
-        return POSE_ATTACK
-
-    elif state == FighterState.SPECIAL:
-        # Special moves also get anticipation on slow attacks
-        if fighter is not None and fighter.attack_frame < 2:
-            attack_data = fighter.current_attack
-            if attack_data is not None and attack_data.startup_frames > 8:
-                return POSE_ATTACK_WINDUP
-        return POSE_SPECIAL
-
-    elif state == FighterState.HITSTUN:
-        return POSE_HITSTUN
-    elif state == FighterState.SHIELDING:
-        return POSE_SHIELDING
-    elif state == FighterState.DODGING:
-        return POSE_DODGING
-    elif state == FighterState.COUNTER:
-        return POSE_COUNTER
-    elif state == FighterState.REFLECTING:
-        return POSE_REFLECTING
-    elif state == FighterState.SHIELD_STUN:
-        return POSE_SHIELD_STUN
-    elif state == FighterState.CROUCH:
-        return POSE_JUMP_CROUCH
-    elif state == FighterState.ENTERING:
-        return POSE_ENTERING
-    else:
-        return POSE_IDLE
-
-
 class X11Renderer:
     """X11-based renderer for the game."""
 
     def __init__(self, width: int = None, height: int = None,
-                 display_name: str = None, title: str = "Stick Figure Fighter"):
+                 display_name: str = None, title: str = "Stick Figure Fighter",
+                 theme: str = None):
         self.width = width or CONFIG.screen_width
         self.height = height or CONFIG.screen_height
 
@@ -881,6 +557,18 @@ class X11Renderer:
         self.colors = {}
         self._allocate_colors()
 
+        # XRender drawing context + visual theme (None/classic without XRender)
+        self.gfx = None
+        try:
+            from gfx.context import Gfx
+            self.gfx = Gfx.create(self.display, self.screen, self.buffer, self.width, self.height)
+        except Exception as e:  # missing libXrender etc.
+            print(f"[Renderer] XRender unavailable, using classic look ({e})")
+        self.frame = 0
+        self._rgb = (255, 255, 255)
+        self.theme = None
+        self.set_theme(theme or os.environ.get("SFF_THEME") or _saved_theme())
+
         # Map window
         _x11.XMapWindow(self.display, self.window)
         _x11.XFlush(self.display)
@@ -908,41 +596,34 @@ class X11Renderer:
 
     def _allocate_colors(self):
         """Pre-allocate commonly used colors."""
-        colors_to_alloc = {
-            'black': (0, 0, 0),
-            'white': (255, 255, 255),
-            'red': (255, 80, 80),
-            'blue': (80, 80, 255),
-            'green': (80, 255, 80),
-            'yellow': (255, 255, 80),
-            'gray': (128, 128, 128),
-            'dark_gray': (64, 64, 64),
-            'platform': (100, 80, 60),
-            'platform_pass': (80, 100, 80),
-            'hitbox': (255, 0, 0),
-            'hurtbox': (0, 255, 0),
-            'p1': (255, 100, 100),
-            'p2': (100, 100, 255),
-            'damage_bar': (200, 50, 50),
-            'stock': (255, 200, 50),
-            # Cycle 3: Effect colors
-            'spark_white': (255, 255, 255),
-            'spark_yellow': (255, 230, 100),
-            'spark_orange': (255, 180, 80),
-            'shield_green': (100, 200, 100),
-            'shield_yellow': (200, 200, 100),
-            'shield_red': (200, 100, 100),
-            'counter_blue': (100, 150, 255),
-            'reflector_cyan': (100, 255, 255),
-            'armor_gold': (255, 200, 50),
-            'trail_cyan': (80, 180, 255),
-            'trail_orange': (255, 120, 50),
-        }
+        colors_to_alloc = _NAMED_COLORS
 
         for name, (r, g, b) in colors_to_alloc.items():
             self.colors[name] = rgb_to_pixel(
                 self.display, self.screen, self.colormap, r, g, b
             )
+
+    # =========================================================================
+    # THEMES
+    # =========================================================================
+
+    @property
+    def themed(self) -> bool:
+        return self.theme is not None and not self.theme.classic
+
+    def set_theme(self, name: str):
+        import themes
+        self.theme = themes.create(name, self)
+        self.effects = getattr(self, 'effects', [])
+
+    def cycle_theme(self) -> str:
+        import themes
+        names = themes.available()
+        if self.gfx is None:
+            return self.theme.name
+        i = names.index(self.theme.name) if self.theme.name in names else -1
+        self.set_theme(names[(i + 1) % len(names)])
+        return self.theme.name
 
     def set_color(self, color_name: str):
         """Set the current drawing color."""
@@ -950,11 +631,14 @@ class X11Renderer:
             _x11.XSetForeground(self.display, self.gc, self.colors[color_name])
         else:
             _x11.XSetForeground(self.display, self.gc, self.white)
+        self._rgb = _NAMED_COLORS.get(color_name, (255, 255, 255))
 
     def set_color_rgb(self, r: int, g: int, b: int):
         """Set color from RGB values."""
+        r, g, b = int(r), int(g), int(b)
         pixel = rgb_to_pixel(self.display, self.screen, self.colormap, r, g, b)
         _x11.XSetForeground(self.display, self.gc, pixel)
+        self._rgb = (max(0, min(255, r)), max(0, min(255, g)), max(0, min(255, b)))
 
     # =========================================================================
     # VISUAL EFFECTS METHODS (Cycle 3)
@@ -1279,7 +963,7 @@ class X11Renderer:
             return
 
         # Only show glow during i-frames
-        if not fighter.is_invincible:
+        if fighter.invincible_frames <= 0:
             return
 
         shake_x, shake_y = self.shake_offset
@@ -1501,11 +1185,20 @@ class X11Renderer:
 
     def draw_line(self, x1: int, y1: int, x2: int, y2: int):
         """Draw a line."""
+        if self.themed:
+            self.gfx.line(x1, y1, x2, y2, 2.4, self._rgb)
+            return
         _x11.XDrawLine(self.display, self.buffer, self.gc,
                       int(x1), int(y1), int(x2), int(y2))
 
     def draw_rect(self, x: int, y: int, w: int, h: int, filled: bool = False):
         """Draw a rectangle."""
+        if self.themed:
+            if filled:
+                self.gfx.fill_rect(x, y, w, h, self._rgb)
+            else:
+                self.gfx.round_rect_outline(x, y, w, h, 0, 1.6, self._rgb)
+            return
         if filled:
             _x11.XFillRectangle(self.display, self.buffer, self.gc,
                                int(x), int(y), int(w), int(h))
@@ -1515,6 +1208,12 @@ class X11Renderer:
 
     def draw_circle(self, cx: int, cy: int, radius: int, filled: bool = False):
         """Draw a circle."""
+        if self.themed:
+            if filled:
+                self.gfx.circle(cx, cy, radius, self._rgb)
+            else:
+                self.gfx.ring(cx, cy, radius, 2.0, self._rgb)
+            return
         x = int(cx - radius)
         y = int(cy - radius)
         d = int(radius * 2)
@@ -1527,6 +1226,10 @@ class X11Renderer:
 
     def draw_text(self, x: int, y: int, text: str):
         """Draw text."""
+        if self.themed:
+            self.theme.ensure_built()
+            self.theme.text(x, y, text, 11, self._rgb, role="small")
+            return
         _x11.XDrawString(self.display, self.buffer, self.gc,
                         int(x), int(y), text.encode(), len(text))
 
@@ -2813,7 +2516,20 @@ class X11Renderer:
                     )
 
     def render(self, game_state: GameState):
-        """Render the complete game state with visual effects (Cycle 3 + Cycle 4 pause)."""
+        """Render the complete game state with visual effects."""
+        self.frame += 1
+        if self.themed:
+            if not game_state.paused:
+                self.update_effects()
+            self.theme.render_match(game_state)
+            if game_state.paused:
+                self._draw_pause_menu(game_state)
+            self.flip()
+            return
+        self._render_classic(game_state)
+
+    def _render_classic(self, game_state: GameState):
+        """Original core-X11 renderer."""
         # Update visual effects first (only when not paused)
         if not game_state.paused:
             self.update_effects()

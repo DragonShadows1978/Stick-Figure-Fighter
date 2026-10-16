@@ -1424,20 +1424,10 @@ class StickFighterGame:
                 self.training_manager.update(state)
 
     def _apply_cpu_inputs(self, fighter: Fighter, inputs: dict, frame: int):
-        """Apply CPU input dict to fighter."""
-        input_state = InputState()
-        input_state.left = inputs.get('left', False)
-        input_state.right = inputs.get('right', False)
-        input_state.up = inputs.get('up', False)
-        input_state.down = inputs.get('down', False)
-        input_state.jump = inputs.get('jump', False)
-        input_state.attack = inputs.get('attack', False)
-        input_state.special = inputs.get('special', False)
-        input_state.shield = inputs.get('shield', False)
-        input_state.grab = inputs.get('grab', False)
-
-        # Update fighter's input state
-        fighter.input_state = input_state
+        """Apply CPU input dict to fighter (in place, so press detection keeps working)."""
+        inp = fighter.input
+        for key in ('left', 'right', 'up', 'down', 'jump', 'attack', 'special', 'shield', 'grab'):
+            setattr(inp, key, bool(inputs.get(key, False)))
 
     def _on_render(self, state: GameState):
         """Called when rendering a match frame."""
