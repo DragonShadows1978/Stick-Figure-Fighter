@@ -83,3 +83,142 @@ def results(theme, r, timer: int, selection: int, frame: int):
     else:
         dots = "." * (1 + (timer // 15) % 3)
         t.text(w / 2, 640, dots, 28, t.palette["text_dim"], align="center", valign="middle")
+
+
+def training_overlay(theme, game_state, tm, frame: int):
+    """Training-mode HUD: CPU status, toggles, frame data, input history, move list, combos, help."""
+    t = theme
+    g = t.g
+    w, h = t.w, t.h
+    pal = t.palette
+    sx, sy = t.r.shake_offset
+
+    # --- status pills (top center, under any timer)
+    pills = []
+    if tm.cpu_controller.state.enabled:
+        st = tm.cpu_controller.state
+        pills.append((f"CPU · {st.behavior.name.replace('_', ' ')} · LV {st.difficulty.value}", pal["warn"]))
+    for flag, label in ((tm.infinite_jumps, "INF JUMPS"), (tm.infinite_shields, "INF SHIELD"),
+                        (tm.show_frame_advantage, "FRAME ADV")):
+        if flag:
+            pills.append((label, pal["accent2"]))
+    rec = tm.recording_state
+    if rec.is_recording:
+        pills.append((f"● REC {len(rec.recorded_inputs)}F", pal["bad"]))
+    elif rec.is_playing:
+        pills.append((f"PLAY {rec.playback_index}/{len(rec.recorded_inputs)}", pal["good"]))
+    if pills:
+        widths = [t.measure(p, 13) + 28 for p, _ in pills]
+        x = w / 2 - (sum(widths) + 10 * (len(pills) - 1)) / 2
+        for (label, col), pw in zip(pills, widths):
+            t.ui_panel(x, 16, pw, 28, 0.5, col)
+            t.text(x + pw / 2, 30, label, 13, col, align="center", valign="middle")
+            x += pw + 10
+
+    # --- frame data cards above the HUD cards
+    if tm.frame_data_overlay.enabled:
+        for i, fighter in enumerate(game_state.fighters[:2]):
+            lines = tm.get_frame_data_text(fighter)
+            if not lines:
+                continue
+            bw, bh = 190, 22 + 18 * len(lines)
+            bx = 30 if i == 0 else w - 30 - bw
+            by = h - 150 - bh
+            t.ui_panel(bx, by, bw, bh, 0.0)
+            for k, line in enumerate(lines):
+                t.text(bx + 14, by + 20 + k * 18, line, 12, pal["text"] if k == 0 else pal["text_dim"],
+                       valign="middle")
+
+    # --- input history columns
+    if tm.show_input_history:
+        for i, hist in enumerate((tm.input_history.get_p1_history(), tm.input_history.get_p2_history())):
+            pw, ph = 112, 268
+            px = 16 if i == 0 else w - 16 - pw
+            py = 70
+            t.ui_panel(px, py, pw, ph, 0.0)
+            t.text(px + pw / 2, py + 18, f"P{i + 1} INPUTS", 12, pal["p1"] if i == 0 else pal["p2"],
+                   align="center", valign="middle")
+            for k, entry in enumerate(list(reversed(hist[-13:]))):
+                acts = entry.get_active_inputs()
+                if not acts:
+                    continue
+                s = " ".join(acts)
+                has_dir = any(c in s for c in "←→↑↓")
+                has_btn = any(c in s for c in "JASGZ")
+                col = pal["warn"] if has_dir and has_btn else pal["good"] if has_btn else pal["accent2"]
+                t.text(px + 12, py + 42 + k * 17, s, 13, col, valign="middle", alpha=1 - k * 0.05)
+
+    # --- move list
+    ml = tm.move_list
+    if ml.enabled and ml._cached_moves:
+        moves = ml.get_visible_moves()
+        pw = 400
+        px = w - pw - 20 - (128 if tm.show_input_history else 0)
+        py = 64
+        ph = 64 + len(moves) * 20
+        t.ui_panel(px, py, pw, ph, 0.4, pal["accent"])
+        name = ml.current_character_type.name if ml.current_character_type else "?"
+        t.text(px + 16, py + 22, f"{name} · MOVE LIST", 15, pal["accent"], valign="middle")
+        cols = (("MOVE", 16, "left"), ("INPUT", 160, "left"), ("START", 270, "right"), ("ACTIVE", 330, "right"),
+                ("DMG", 380, "right"))
+        for lab, cx, al in cols:
+            t.text(px + cx, py + 44, lab, 10, pal["text_dim"], valign="middle", align=al)
+        for k, mv in enumerate(moves):
+            yy = py + 64 + k * 20
+            t.text(px + 16, yy, mv.name[:15], 12, pal["text"], valign="middle")
+            t.text(px + 160, yy, mv.input_notation, 12, pal["warn"], valign="middle")
+            t.text(px + 270, yy, f"{mv.startup_frames}f", 12, pal["good"], valign="middle", align="right")
+            t.text(px + 330, yy, str(mv.active_frames), 12, pal["accent2"], valign="middle", align="right")
+            t.text(px + 380, yy, f"{mv.damage:.0f}", 12, pal["bad"], valign="middle", align="right")
+        if ml.can_scroll_up():
+            t.text(px + pw - 18, py + 22, "↑", 13, pal["text"], align="center", valign="middle")
+        if ml.can_scroll_down():
+            t.text(px + pw - 18, py + ph - 14, "↓", 13, pal["text"], align="center", valign="middle")
+
+    # --- hitbox visualization modes
+    hv = tm.hitbox_viz
+    if hv.mode.name != "NONE":
+        for fighter in game_state.fighters:
+            if hv.show_hurtboxes:
+                hb = fighter.get_hurtbox_aabb()
+                g.fill_rect(hb.x + sx, hb.y + sy, hb.width, hb.height, hv.hurtbox_color, 0.12)
+                g.round_rect_outline(hb.x + sx, hb.y + sy, hb.width, hb.height, 3, 1.6, hv.hurtbox_color, 0.9)
+            if hv.show_hitboxes:
+                for b in fighter.get_active_hitbox_aabbs():
+                    g.fill_rect(b.x + sx, b.y + sy, b.width, b.height, hv.hitbox_color, 0.25)
+                    g.round_rect_outline(b.x + sx, b.y + sy, b.width, b.height, 3, 2, hv.hitbox_color, 1.0)
+        if hv.show_collision_points:
+            for cx, cy in hv.get_active_collision_points(game_state.frame):
+                g.ring(cx + sx, cy + sy, 9, 2, hv.collision_color)
+                g.circle(cx + sx, cy + sy, 3.5, hv.collision_color)
+
+    # --- combo counter over the defender
+    if tm.show_combo_counter:
+        cc = tm.combo_counter
+        for pid in range(2):
+            data = cc.get_combo_display(pid)
+            if not data:
+                continue
+            defender = game_state.fighters[1 - pid]
+            x, y = defender.position.x + sx, defender.position.y - 110 + sy
+            a = data["alpha"]
+            n = data["count"]
+            if data["is_active"]:
+                col = pal["bad"] if n >= 10 else pal["warn"] if n >= 5 else pal["accent2"]
+                t.text(x, y, f"{n} HITS", 26, col, align="center", valign="middle", role="title", alpha=a)
+                t.text(x, y + 24, f"{data['damage']:.0f}%", 15, pal["text"], align="center", valign="middle",
+                       alpha=a)
+            else:
+                t.text(x, y, f"{n}× DROPPED", 18, pal["text_dim"], align="center", valign="middle", alpha=a)
+        b1, d1 = cc.get_best_combo(0)
+        b2, d2 = cc.get_best_combo(1)
+        if b1 > 1 or b2 > 1:
+            t.ui_panel(w / 2 - 110, 54, 220, 30, 0.0)
+            t.text(w / 2, 69, f"BEST  P1 {b1} ({d1:.0f}%)   P2 {b2} ({d2:.0f}%)", 11, pal["text_dim"],
+                   align="center", valign="middle")
+
+    # --- help bar
+    help1 = "F1 CPU · F2 BEHAVIOR · F3 FRAME DATA · F4 LEVEL · F5 INF JUMPS · F6 FRAME ADV"
+    help2 = "F7 INPUTS · F8 MOVES · TAB HITBOXES · R DAMAGE · T POSITIONS · F9 THEME"
+    t.text(w / 2, h - 30, help1, 11, pal["text_dim"], align="center", valign="middle", alpha=0.85)
+    t.text(w / 2, h - 14, help2, 11, pal["text_dim"], align="center", valign="middle", alpha=0.85)

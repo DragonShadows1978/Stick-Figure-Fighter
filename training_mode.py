@@ -167,17 +167,19 @@ class CPUController:
 
         # Handle RANDOM by picking a behavior periodically
         if behavior == CPUBehavior.RANDOM:
-            if self.state.action_timer <= 0:
-                behavior = random.choice([
+            # Keep the picked behavior for 1-3 seconds (on its own timer: the
+            # sub-behaviors use action_timer themselves).
+            if getattr(self, '_random_timer', 0) <= 0:
+                self._random_choice = random.choice([
                     CPUBehavior.STAND,
                     CPUBehavior.WALK,
                     CPUBehavior.JUMP,
                     CPUBehavior.SHIELD,
                     CPUBehavior.ATTACK
                 ])
-                self.state.action_timer = random.randint(60, 180)  # 1-3 seconds
-            else:
-                self.state.action_timer -= 1
+                self._random_timer = random.randint(60, 180)
+            self._random_timer -= 1
+            behavior = self._random_choice
 
         # STAND: Do nothing (default training dummy)
         if behavior == CPUBehavior.STAND:

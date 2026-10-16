@@ -1461,7 +1461,11 @@ class StickFighterGame:
 
             # Draw training mode overlay (after main render)
             if self.training_manager:
-                self.renderer.draw_training_mode_info(state, self.training_manager)
+                if self.renderer.themed:
+                    import screens
+                    screens.training_overlay(self.renderer.theme, state, self.training_manager, self.frame_count)
+                else:
+                    self.renderer.draw_training_mode_info(state, self.training_manager)
 
             # Draw pause overlay if paused
             if state.paused:
