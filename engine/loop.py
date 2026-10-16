@@ -4,7 +4,6 @@ import time
 from typing import Callable, Optional
 
 from .combat import AttackData, AttackType, default_attack
-from .config import FOOT_OFFSET
 from .fighter import DodgeType, Fighter, FighterState
 from .geometry import AABB, Vector2
 from .input import InputState
@@ -202,6 +201,7 @@ class GameLoop:
 
         # Platform collision
         self._handle_platform_collision(fighter)
+        self._update_ground_support(fighter)
 
         fighter.state_frame += 1
 
@@ -560,13 +560,10 @@ class GameLoop:
             return fighter.velocity.y
 
         hurtbox = fighter.get_hurtbox_aabb()
-        foot_y = hurtbox.bottom
+        foot_y = fighter.feet_y
         max_displacement = fighter.velocity.y
 
-        # Check all platforms for potential contact
-        platforms_to_check = [self.state.stage.main_platform] + self.state.stage.platforms
-
-        for platform in platforms_to_check:
+        for platform in self.state.stage.all_platforms:
             # Skip if no horizontal overlap
             plat_aabb = platform.get_aabb()
             if hurtbox.right < plat_aabb.left or hurtbox.left > plat_aabb.right:
@@ -632,12 +629,12 @@ class GameLoop:
             return
 
         # Check if feet are near the platform surface
-        foot_y = hurtbox.bottom
+        foot_y = fighter.feet_y
         prev_foot_y = foot_y - fighter.velocity.y
 
         # For passthrough platforms, only land if coming from above
         if platform.passthrough:
-            if prev_foot_y >= plat_aabb.top:
+            if prev_foot_y > plat_aabb.top:
                 return
             # Allow dropping through
             if fighter.input.down:
@@ -647,16 +644,14 @@ class GameLoop:
         if hurtbox.right < plat_aabb.left or hurtbox.left > plat_aabb.right:
             return
 
-        # Check if crossing contact zone (offset volume)
-        # This triggers detection early to prevent penetration
-        contact_zone_y = platform.contact_zone_y
-        if prev_foot_y <= contact_zone_y <= foot_y:
-            # Land detected! Snap to EXACT surface, not contact zone
-            # This ensures visual correctness while using offset for detection
-            # Snap to exact surface, accounting for rendering foot offset
-            # position.y should be FOOT_OFFSET pixels above platform surface
-            # so that rendered feet (at position.y + FOOT_OFFSET) align exactly with platform.top
-            fighter.position.y = plat_aabb.top - FOOT_OFFSET
+        # Land when the feet were at/above the surface last frame and have now
+        # reached the contact zone (offset volume) just above it. Detecting at
+        # the zone rather than the surface prevents penetration; checking the
+        # previous position against the surface also catches feet that start
+        # inside the zone (e.g. respawning exactly on the floor).
+        if prev_foot_y <= plat_aabb.top and foot_y >= platform.contact_zone_y:
+            # Land: snap feet to the exact surface, not the contact zone
+            fighter.position.y = plat_aabb.top - self.config.foot_offset
             fighter.velocity.y = 0
             fighter.grounded = True
             fighter.can_double_jump = True
@@ -667,8 +662,39 @@ class GameLoop:
                 # Trigger landing dust effect
                 if self.on_land:
                     self.on_land(fighter, fighter.position.x, fighter.position.y)
-            elif fighter.state == FighterState.LANDING and fighter.state_frame > 4:
-                fighter.state = FighterState.IDLE
+
+    # States that just mean "standing around"; walking off a ledge turns them into FALLING
+    _GROUNDED_IDLE_STATES = (FighterState.IDLE, FighterState.WALKING, FighterState.RUNNING,
+                             FighterState.LANDING, FighterState.CROUCH, FighterState.SHIELDING)
+    _SUPPORT_TOLERANCE = 0.5
+
+    def _is_supported(self, fighter: Fighter) -> bool:
+        """True if the fighter's feet are resting on a platform."""
+        hurtbox = fighter.get_hurtbox_aabb()
+        foot_y = fighter.feet_y
+        inp = fighter.input
+        dropping = inp.down and not (inp.attack or inp.special or inp.shield)
+        for platform in self.state.stage.all_platforms:
+            plat_aabb = platform.get_aabb()
+            if hurtbox.right < plat_aabb.left or hurtbox.left > plat_aabb.right:
+                continue
+            if platform.passthrough and dropping:
+                continue
+            if abs(foot_y - plat_aabb.top) <= self._SUPPORT_TOLERANCE:
+                return True
+        return False
+
+    def _update_ground_support(self, fighter: Fighter):
+        """Unground fighters that walked off a ledge or dropped through a platform."""
+        if not fighter.grounded:
+            return
+        if not self._is_supported(fighter):
+            fighter.grounded = False
+            if fighter.state in self._GROUNDED_IDLE_STATES:
+                fighter.state = FighterState.FALLING
+                fighter.state_frame = 0
+        elif fighter.state == FighterState.LANDING and fighter.state_frame > 4:
+            fighter.state = FighterState.IDLE
 
     def _check_knockouts(self):
         """Check if any fighters are in blast zones."""

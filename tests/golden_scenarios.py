@@ -58,11 +58,28 @@ class StickyInput:
         weights = [w for _, w in INTENTS]
         self._pick = lambda: self.rng.choices(names, weights)[0]
 
-    def next(self, me, opponent):
+    def next(self, me, opponent, stage):
+        ground = stage.main_platform
+        center = ground.x + ground.width / 2
+        toward_center = 1 if me.position.x < center else -1
+        offstage = not (ground.x < me.position.x < ground.x + ground.width)
+        if offstage:
+            # Recover: drift back, jump, then up-special
+            inp = InputState(left=toward_center < 0, right=toward_center > 0)
+            if me.velocity.y > 0:
+                inp.up = True
+                if me.can_double_jump:
+                    inp.jump = self.rng.random() < 0.5
+                else:
+                    inp.special = self.rng.random() < 0.5
+            return inp
+        near_edge = min(me.position.x - ground.x, ground.x + ground.width - me.position.x) < 90
         if self.hold <= 0:
             self.intent = self._pick()
             toward = 1 if opponent.position.x > me.position.x else -1
             self.direction = toward if self.rng.random() < 0.75 else -toward
+            if near_edge:
+                self.direction = toward_center
             self.hold = self.rng.randint(4, 18)
         self.hold -= 1
         inp = InputState()
@@ -146,8 +163,8 @@ def run_scenario(name, p1, p2, stage, seed):
     seen_counter = False
     for frame in range(FRAMES):
         p1f, p2f = game.fighters
-        p1f.input = gens[0].next(p1f, p2f)
-        p2f.input = gens[1].next(p2f, p1f)
+        p1f.input = gens[0].next(p1f, p2f, game.stage)
+        p2f.input = gens[1].next(p2f, p1f, game.stage)
         ongoing = loop.step()
         if game.projectiles:
             events["projectile_frames"] += 1

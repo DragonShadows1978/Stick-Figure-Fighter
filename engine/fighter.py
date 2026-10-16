@@ -127,7 +127,7 @@ class Fighter:
         # Input
         self.input = InputState()
 
-        # Hurtbox (vulnerable area). hurtbox.bottom == position.y in sim coordinates.
+        # Hurtbox (vulnerable area), relative to position (not the feet)
         self.hurtbox = Hurtbox(
             offset=Vector2(-stats.width / 2, -stats.height),
             width=stats.width,
@@ -142,6 +142,11 @@ class Fighter:
             self.color = color
         else:
             self.color = (255, 100, 100) if player_id == 0 else (100, 100, 255)
+
+    @property
+    def feet_y(self) -> float:
+        """Y of the fighter's feet, the point used for platform collision."""
+        return self.position.y + self.config.foot_offset
 
     def get_hurtbox_aabb(self) -> AABB:
         """Get the current hurtbox as an AABB."""

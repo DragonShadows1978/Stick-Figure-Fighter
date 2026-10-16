@@ -21,6 +21,10 @@ class GameConfig:
     knockback_scaling: float = 0.12
     hitstun_multiplier: float = 0.4  # frames of hitstun per knockback unit
 
+    # Distance from a fighter's position down to its feet. Platform collision
+    # uses the feet; hurtboxes and hitboxes are relative to position.
+    foot_offset: float = 40.0
+
     # Game rules
     stock_count: int = 3
 
@@ -39,7 +43,5 @@ class GameConfig:
 # Default config instance, used whenever a GameState isn't given its own.
 CONFIG = GameConfig()
 
-# fighter.position.y is the fighter's hip/center line. Fighters standing on a
-# platform rest with position.y this far above the surface, which is where the
-# stick-figure renderer draws the feet.
-FOOT_OFFSET = 40.0
+# Default GameConfig.foot_offset, kept as a module constant for older imports.
+FOOT_OFFSET = GameConfig.foot_offset

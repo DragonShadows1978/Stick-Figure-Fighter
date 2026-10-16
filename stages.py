@@ -68,8 +68,8 @@ def battlefield() -> Stage:
         main_platform=main,
         blast_zones=_default_blast_zones(),
         spawn_points=[
-            Vector2(480, 500),
-            Vector2(800, 500)
+            Vector2(480, 510),
+            Vector2(800, 510)
         ],
         parallax_layers=[far_layer, mid_layer, near_layer]
     )
@@ -133,8 +133,8 @@ def final_destination() -> Stage:
         main_platform=main,
         blast_zones=_default_blast_zones(),
         spawn_points=[
-            Vector2(440, 500),
-            Vector2(840, 500)
+            Vector2(440, 510),
+            Vector2(840, 510)
         ],
         parallax_layers=[star_layer, nebula_layer, debris_layer]
     )

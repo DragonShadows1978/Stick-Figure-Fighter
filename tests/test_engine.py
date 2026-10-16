@@ -133,3 +133,55 @@ def test_headless_run_is_not_tied_to_wall_clock():
     run_headless_match(game, lambda state, pid: InputState(), max_frames=6000)
     assert game.frame == 6000
     assert time.perf_counter() - start < 5  # real time would be 100 seconds
+
+
+def test_landing_does_not_sink_feet_into_platform():
+    game = make_game()
+    loop = GameLoop(game, headless=True)
+    f = game.fighters[0]
+    f.position.y = 100
+    f.grounded = False
+    f.state = FighterState.FALLING
+    deepest = 0.0
+    for _ in range(120):
+        press(loop, f)
+        deepest = max(deepest, f.feet_y)
+    assert f.grounded
+    assert deepest == game.stage.main_platform.y
+    assert f.state == FighterState.IDLE  # LANDING resolves to IDLE
+
+
+def test_walking_off_a_ledge_falls():
+    game = make_game()
+    loop = GameLoop(game, headless=True)
+    f = game.fighters[0]
+    for _ in range(150):  # ground spans x 0..1000, fighter starts at 300 walking left
+        press(loop, f, left=True)
+    assert not f.grounded
+    assert f.feet_y > game.stage.main_platform.y
+
+
+def test_holding_down_drops_through_passthrough_platform():
+    game = make_game()
+    game.stage.platforms.append(Platform(x=200, y=300, width=200, passthrough=True))
+    loop = GameLoop(game, headless=True)
+    f = game.fighters[0]
+    f.position.y = 100
+    f.grounded = False
+    for _ in range(60):
+        press(loop, f)
+    assert f.grounded and f.feet_y == 300
+    for _ in range(60):
+        press(loop, f, down=True)
+    assert f.grounded and f.feet_y == game.stage.main_platform.y
+
+
+def test_airborne_fighter_with_feet_on_surface_lands_instead_of_falling_through():
+    game = make_game()
+    loop = GameLoop(game, headless=True)
+    f = game.fighters[0]
+    f.respawn(game.get_spawn_point(0))  # spawn point has feet exactly on the floor
+    assert not f.grounded
+    for _ in range(10):
+        press(loop, f)
+    assert f.grounded and f.feet_y == game.stage.main_platform.y
