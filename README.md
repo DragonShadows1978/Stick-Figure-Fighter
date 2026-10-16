@@ -42,7 +42,7 @@ HUD, menus and fonts all change together.
 |---|---|
 | **Neon Arcade** | Glowing light-tube fighters. Battlefield is a synthwave sunset with a scrolling grid; Final Destination is a cyber void with a wireframe planet |
 | **Sketchbook** (in progress) | Everything drawn in a school notebook: ink fighters with line boil, marker colors, comic hit bursts |
-| **Silhouette** (in progress) | Painterly dusk and moonlit skies with layered haze; fighters are silhouettes with a colored rim light |
+| **Silhouette** | Painterly dusk and moonlit skies with layered haze; fighters are silhouettes with a colored rim light |
 | **Classic** | The original look; also the automatic fallback when the X server lacks XRender |
 
 Press **F9** anywhere to cycle themes, or pick one under Settings → Gameplay →

@@ -171,9 +171,11 @@ class Theme:
         return self.fonts.get(role) or self.fonts["ui"]
 
     def text(self, x, y, s, size=16, color=None, role="ui", align="left", valign="baseline",
-             alpha=1.0, glow=None, glow_alpha=0.0, tracking=None) -> float:
+             alpha=1.0, glow=None, glow_alpha=0.0, tracking=None, glow_op: int = X.OP_ADD) -> float:
+        """Draw text. glow_op=X.OP_OVER with a dark glow color gives a legibility halo."""
         return self.face(role).draw(str(s), x, y, size, color or self.palette["text"], alpha, align,
-                                    valign, glow_color=glow, glow_alpha=glow_alpha, tracking=tracking)
+                                    valign, glow_color=glow, glow_alpha=glow_alpha, tracking=tracking,
+                                    glow_op=glow_op)
 
     def measure(self, s, size=16, role="ui") -> float:
         return self.face(role).measure(str(s), size)

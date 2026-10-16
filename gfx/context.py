@@ -450,7 +450,11 @@ class Gfx:
 
     def fill_shape(self, shape: Shape, rgb: RGB, a: float = 1.0, op: int = X.OP_OVER,
                    src: Optional[Image] = None, src_x: int = 0, src_y: int = 0):
-        """Fill accumulated triangles with a solid color, or with an image as the source."""
+        """
+        Fill accumulated triangles with a solid color, or with an image as the source.
+        Only the Porter-Duff ops (OVER, ADD, ...) work here: the X server rejects blend
+        modes like OP_SCREEN for triangles (BadValue). Use them with blit/stamp only.
+        """
         parts = shape.chunks
         if shape.tris:
             parts = parts + [np.asarray(shape.tris, dtype=np.float64).reshape(-1, 6)]
