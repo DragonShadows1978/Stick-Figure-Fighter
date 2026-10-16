@@ -385,6 +385,10 @@ class Theme:
     def ui_backdrop(self, frame: int, variant: str = "menu"):
         self.g.fill_rect(0, 0, self.w, self.h, self.palette["bg"])
 
+    def ui_scrim(self, alpha: float):
+        """Wash over the scene behind overlays (pause, countdown). Paper themes wash light."""
+        self.g.fill_rect(0, 0, self.w, self.h, (0, 0, 0), alpha)
+
     def ui_panel(self, x, y, w, h, emphasis: float = 0.0, accent: Optional[RGB] = None):
         self.g.round_rect(x, y, w, h, 10, self.palette["panel"], 0.92)
         edge = accent or self.palette["panel_edge"]

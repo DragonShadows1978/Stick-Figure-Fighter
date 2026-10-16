@@ -21,7 +21,6 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-from engine import FighterState
 from gfx import raster as R
 from gfx import xrender as X
 from gfx.cache import cached
@@ -73,6 +72,11 @@ def _hilite(c) -> RGB:
     """Highlighter tone for a color: dark inks get lightened so labels stay readable on top."""
     luma = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]
     return _on_paper(_mix(c, (255, 255, 255), 0.62 if luma < 120 else 0.4 if luma < 170 else 0.15))
+
+
+def _stable(obj) -> str:
+    """Process-independent short hash (Python's hash() of str is randomized per run)."""
+    return hashlib.sha1(repr(obj).encode()).hexdigest()[:12]
 
 
 def _h32(*vals) -> int:
@@ -354,7 +358,6 @@ def _doodle_spiral(mask, cx, cy, r, seed, turns=3.2, w=1.3):
 
 
 def _doodle_arrow(mask, x0, y0, x1, y1, seed, w=1.6, bend=14):
-    mx, my = (x0 + x1) / 2, (y0 + y1) / 2
     dx, dy = x1 - x0, y1 - y0
     L = math.hypot(dx, dy) or 1
     nx, ny = -dy / L, dx / L
@@ -400,7 +403,6 @@ def _doodle_tape(rgb, cx, cy, w, h, ang, seed, tint=(250, 246, 222)):
 
 
 def _pine(mask, x, y, h, seed, w=1.4):
-    rng = np.random.default_rng(seed)
     _stroke(mask, _wobble([(x, y), (x, y - h * 0.3)], 0.3, seed, step=2), w)
     tiers = 3
     for i in range(tiers):
@@ -409,7 +411,6 @@ def _pine(mask, x, y, h, seed, w=1.4):
         tip = ty - h * 0.36
         pts = [(x - tw, ty), (x, tip), (x + tw, ty), (x - tw * 0.9, ty + 0.5)]
         _stroke(mask, _wobble(pts, 0.5, seed + i, step=2, wl=12), w, taper=0.2)
-    return rng
 
 
 def _lollipop(mask, fill, x, y, h, seed, w=1.4):
@@ -556,7 +557,6 @@ def _bf_far(W: int, H: int) -> np.ndarray:
         y = (hill2[int(x)] if side[int(x)] else hill_bg[int(x)]) + 10
         if kind == "pine":
             _pine(G, x, y, th, 50 + i)
-            sub = np.zeros_like(GR[:1, :1])
             # green scribble inside the pine
             pts = []
             for k in range(14):
@@ -564,7 +564,6 @@ def _bf_far(W: int, H: int) -> np.ndarray:
                 half = th * 0.3 * (1 - k / 15)
                 pts += [(x - half, yy0), (x + half, yy0 - 1.5)]
             _stroke(GR, _wobble(pts, 0.5, 70 + i, step=2, wl=9), 1.6, alpha=0.75)
-            del sub
         else:
             _lollipop(G, GR, x, y, th, 60 + i)
 
@@ -614,13 +613,16 @@ def _bf_far(W: int, H: int) -> np.ndarray:
 
     # --- coffee ring on the right edge, tape on the top-left corner
     cx, cy, cr = 1198 + ox, 392 + oy, 50
-    d = np.hypot(xx - cx, yy - cy) + (R.fbm(xx, yy, 18, 3, seed=31) - 0.5) * 5
+    bx0, by0 = int(cx - cr - 12), int(cy - cr - 30)
+    bx1, by1 = min(W, int(cx + cr + 40)), int(cy + cr + 12)
+    wx, wy = R.grid(bx1 - bx0, by1 - by0, bx0, by0)
+    d = np.hypot(wx - cx, wy - cy) + (R.fbm(wx, wy, 18, 3, seed=31) - 0.5) * 5
     ring = np.exp(-((d - cr) / 1.6) ** 2) * 0.75 + np.exp(-((d - cr + 3) / 4) ** 2) * 0.25 + \
         R.coverage(d - cr) * 0.08
-    ring *= 0.6 + 0.5 * R.fbm(xx, yy, 40, 3, seed=32)
-    d2 = np.hypot(xx - cx - 20, yy - cy + 14) + (R.fbm(xx, yy, 18, 3, seed=33) - 0.5) * 5
-    ring2 = np.exp(-((d2 - cr * 0.96) / 1.4) ** 2) * 0.5 * (xx > cx - 10)
-    _mul(rgb, np.clip(ring + ring2, 0, 1), COFFEE, 0.55)
+    ring *= 0.6 + 0.5 * R.fbm(wx, wy, 40, 3, seed=32)
+    d2 = np.hypot(wx - cx - 20, wy - cy + 14) + (R.fbm(wx, wy, 18, 3, seed=33) - 0.5) * 5
+    ring2 = np.exp(-((d2 - cr * 0.96) / 1.4) ** 2) * 0.5 * (wx > cx - 10)
+    _mul(rgb[by0:by1, bx0:bx1], np.clip(ring + ring2, 0, 1), COFFEE, 0.55)
 
     # --- composite the pencil layers
     _mul(rgb, S * (0.7 + 0.3 * tooth), GRAPHITE, 0.22)
@@ -686,8 +688,9 @@ def _fd_far(W: int, H: int) -> np.ndarray:
     uy = -(xx - pcx) * math.sin(ang) + (yy - pcy) * math.cos(ang)
     lit = np.clip(((xx - pcx) * 0.7 - (yy - pcy) * 0.7) / pr, -1, 1)
     shade_p = body * np.clip((0.25 - lit) * 1.4, 0, 1)
-    BL = np.maximum(BL, _hatch_box(SH, (pcx - pr * 2.4, pcy - pr * 1.4, pcx + pr * 2.4, pcy + pr * 1.4), 35, 3.4, 1.1, 51, length=60, gap=0.02) * np.clip(shade_p * 2, 0, 1))
-    BL = np.maximum(BL, _hatch_box(SH, (pcx - pr * 2.4, pcy - pr * 1.4, pcx + pr * 2.4, pcy + pr * 1.4), -40, 3.8, 1.0, 52, length=60, gap=0.02) *
+    pbox = (pcx - pr * 2.4, pcy - pr * 1.4, pcx + pr * 2.4, pcy + pr * 1.4)
+    BL = np.maximum(BL, _hatch_box(SH, pbox, 35, 3.4, 1.1, 51, length=60, gap=0.02) * np.clip(shade_p * 2, 0, 1))
+    BL = np.maximum(BL, _hatch_box(SH, pbox, -40, 3.8, 1.0, 52, length=60, gap=0.02) *
                     R.smoothstep(0.45, 0.8, shade_p))
     for k, off in enumerate((-30, -12, 8, 26, 42)):
         a = np.linspace(-1, 1, 60)
@@ -720,7 +723,8 @@ def _fd_far(W: int, H: int) -> np.ndarray:
             _stroke(B, run, w_, taper=0.2)
     ringzone = ((ux / (pr * 1.85)) ** 2 + (uy / (pr * 0.42)) ** 2 > 1) & \
         ((ux / (pr * 2.15)) ** 2 + (uy / (pr * 0.52)) ** 2 < 1) & ~((dd < pr) & (uy < 0))
-    BL = np.maximum(BL, _hatch_box(SH, (pcx - pr * 2.4, pcy - pr * 1.4, pcx + pr * 2.4, pcy + pr * 1.4), -70, 3.0, 0.9, 56, length=14, gap=0.2) * ringzone * 0.75)
+    BL = np.maximum(BL, _hatch_box(SH, pbox, -70, 3.0, 0.9,
+                                   56, length=14, gap=0.3) * ringzone * 0.45)
     # moon
     mcx, mcy, mr = 930 + ox, 92 + oy, 15
     _stroke(B, _wobble(_loop_pts(mcx, mcy, mr, mr, 57), 0.4, 57, step=2, wl=20), 1.5, taper=0.4)
@@ -788,12 +792,13 @@ def _fd_far(W: int, H: int) -> np.ndarray:
             for k in range(3):
                 a = k * math.pi / 3 + rng.random() * 0.3
                 r_ = 4 + rng.random() * 2
-                _stroke(B, [(X0 - math.cos(a) * r_, Y0 - math.sin(a) * r_), (X0 + math.cos(a) * r_, Y0 + math.sin(a) * r_)],
-                        1.1)
+                ca, sa = math.cos(a) * r_, math.sin(a) * r_
+                _stroke(B, [(X0 - ca, Y0 - sa), (X0 + ca, Y0 + sa)], 1.1)
         elif kind == 3:
             r_ = 6 + rng.random() * 4
-            pts = [(X0, Y0 - r_), (X0 + r_ * 0.2, Y0 - r_ * 0.2), (X0 + r_, Y0), (X0 + r_ * 0.2, Y0 + r_ * 0.2),
-                   (X0, Y0 + r_), (X0 - r_ * 0.2, Y0 + r_ * 0.2), (X0 - r_, Y0), (X0 - r_ * 0.2, Y0 - r_ * 0.2), (X0, Y0 - r_)]
+            q = r_ * 0.2
+            pts = [(X0, Y0 - r_), (X0 + q, Y0 - q), (X0 + r_, Y0), (X0 + q, Y0 + q), (X0, Y0 + r_), (X0 - q, Y0 + q),
+                   (X0 - r_, Y0), (X0 - q, Y0 - q), (X0, Y0 - r_)]
             _stroke(Y if rng.random() < 0.5 else B, _wobble(pts, 0.3, s, step=1.5, wl=10), 1.2)
         else:
             for k in range(3):
@@ -1434,7 +1439,8 @@ def _sticky(w: int, h: int, color, angle_deg: float, seed: int) -> np.ndarray:
     R.paint(img, sh, (60, 45, 20), a=0.32)
     base = _mix(color, (255, 250, 232), 0.7)
     t = (v + h / 2) / h
-    col = R.gradient_stops(t, [(0, _mix(base, (255, 255, 255), 0.1)), (0.18, base), (1, _mix(base, (120, 90, 50), 0.1))])
+    col = R.gradient_stops(t, [(0, _mix(base, (255, 255, 255), 0.1)), (0.18, base),
+                               (1, _mix(base, (120, 90, 50), 0.1))])
     corner = np.exp(-np.hypot(u - w / 2, v - h / 2) / 26.0) * 0.18
     col *= (1 - corner[..., None])
     col *= (0.975 + 0.04 * R.fbm(xx, yy, 5, 2, seed=seed))[..., None]
@@ -1473,16 +1479,13 @@ def _bar_frame(w: int, h: int, seed: int) -> np.ndarray:
 def _timer_tag(seed: int) -> np.ndarray:
     W, H = 120, 58
     xx, yy = R.grid(W, H)
-    rng = np.random.default_rng(seed)
     img = R.blank(W, H)
-    cols = np.arange(W)
     tear = (R.fbm1d(W, 6, 2, seed=seed) - 0.5) * 4
     inside = np.clip(xx - 10, 0, 1) * np.clip(W - 10 - xx, 0, 1) * np.clip(yy - 12, 0, 1) * \
         np.clip((H - 8 + tear[None, :]) - yy, 0, 1)
     R.paint(img, R.blur(np.roll(np.roll(inside, 3, 0), 2, 1), 2.5), (60, 45, 20), a=0.25)
     R.paint(img, inside, (252, 250, 243))
     R.paint(img, inside * np.clip(1 - ((H - 8 + tear[None, :]) - yy) / 2, 0, 1), (255, 255, 255), a=0.8)
-    del cols, rng
     tape = np.clip(1 - np.abs(yy - 12) / 7, 0, 1) ** 0.3 * (np.abs(xx - W / 2) < 26)
     R.paint(img, tape, (250, 246, 220), a=0.55)
     return img
@@ -1520,7 +1523,7 @@ class _GlyphStamps:
             cell_w = int(size * 0.85) + 2 * pad
             cell_h = int(size * 1.5) + 2 * pad
             base = pad + size * 1.15
-            arr = _c(f"glyphs-{size}-{variants}-{abs(hash(chars)) % 99991}",
+            arr = _c(f"glyphs-{size}-{variants}-{_stable((chars, style))}",
                      lambda: _glyph_sheet(chars, size, style, variants, cell_w, cell_h, pad, base), _glyph_sheet)
             imgs = [[g.upload(np.ascontiguousarray(arr[v * cell_h:(v + 1) * cell_h, i * cell_w:(i + 1) * cell_w]))
                      for i in range(len(chars))] for v in range(variants)]
@@ -1555,6 +1558,7 @@ class _GlyphStamps:
 
 
 _CORE_FUNCS = None
+_SRC_MEMO: Dict[object, bytes] = {}
 
 
 def _srchash(*funcs) -> str:
@@ -1565,10 +1569,14 @@ def _srchash(*funcs) -> str:
                        _np_text, _rgba_from_layers, _mask_rgba, _mix, _on_paper)
     h = hashlib.sha1()
     for f in tuple(funcs) + _CORE_FUNCS:
-        try:
-            h.update(inspect.getsource(f).encode())
-        except (OSError, TypeError):
-            h.update(repr(f).encode())
+        src = _SRC_MEMO.get(f)
+        if src is None:
+            try:
+                src = inspect.getsource(f).encode()
+            except (OSError, TypeError):
+                src = repr(f).encode()
+            _SRC_MEMO[f] = src
+        h.update(src)
     h.update(repr((PAPER, INK, GRAPHITE, BALLPOINT, RED_PEN, PAD_X, PAD_Y)).encode())
     return h.hexdigest()[:8]
 
@@ -1644,9 +1652,9 @@ class SketchTheme(Theme):
         kind = "space" if "final" in stage.name.lower() else "ruled"
         a = {"kind": kind, "pad": (PAD_X, PAD_Y), "mid": None, "arrays": {}}
         if kind == "ruled":
-            a["far"] = self._up_keep(a, "far", _c(f"bf-far-{W}x{H}", lambda: _bf_far(W, H), _bf_far, _paper, _ruled, _doodle_star,
-                                   _doodle_spiral, _doodle_arrow, _doodle_smiley, _doodle_tape, _pine, _lollipop,
-                                   _star_pts, _text_width))
+            a["far"] = self._up_keep(a, "far", _c(f"bf-far-{W}x{H}", lambda: _bf_far(W, H), _bf_far, _paper, _ruled,
+                                                  _doodle_star, _doodle_spiral, _doodle_arrow, _doodle_smiley,
+                                                  _doodle_tape, _pine, _lollipop, _star_pts, _text_width))
             self_clouds = []
             for i, (cw, ch) in enumerate(((170, 74), (200, 86), (150, 66))):
                 self_clouds.append([g.upload(_c(f"cloud{i}-{v}", lambda cw=cw, ch=ch, s=i * 10 + v:
@@ -1654,8 +1662,8 @@ class SketchTheme(Theme):
             a["clouds"] = self_clouds
             a["rays"] = g.upload(_c("sunrays", lambda: _sun_rays(5), _sun_rays))
         else:
-            a["far"] = self._up_keep(a, "far", _c(f"fd-far-{W}x{H}", lambda: _fd_far(W, H), _fd_far, _paper, _doodle_star,
-                                   _star_pts, _text_width))
+            a["far"] = self._up_keep(a, "far", _c(f"fd-far-{W}x{H}", lambda: _fd_far(W, H), _fd_far, _paper,
+                                                  _doodle_star, _star_pts, _text_width))
             a["rocket"] = g.upload(_c("rocket", lambda: _rocket_sprite(7), _rocket_sprite))
             a["flame"] = [g.upload(_c(f"flame{i}", lambda i=i: _flame_sprite(8 + i), _flame_sprite)) for i in range(3)]
         plats = {}
@@ -1772,6 +1780,20 @@ class SketchTheme(Theme):
             fl = a["flame"][(f // 4) % 3]
             g.blit(fl, rx - 30 - fl.w / 2, ry + 24 - fl.h / 2)
             g.blit(a["rocket"], rx - a["rocket"].w / 2, ry - a["rocket"].h / 2)
+            cyc, ph = divmod(f, 420)
+            if ph < 46:
+                t = ph / 46.0
+                hx = _h32(cyc, 9)
+                x0, y0 = 300 + hx % 600, 90 + (hx >> 10) % 120
+                ex, ey = x0 + 260 * t, y0 + 90 * t
+                s = Shape()
+                for k in range(5):
+                    a0, a1 = max(0.0, t - 0.32 + k * 0.064), max(0.0, t - 0.32 + k * 0.064 + 0.04)
+                    s.segment(x0 + 260 * a0 + sx, y0 + 90 * a0 + sy, x0 + 260 * a1 + sx, y0 + 90 * a1 + sy,
+                              0.6 + k * 0.4, 0.9 + k * 0.4)
+                g.fill_shape(s, BALLPOINT, 0.8 * (1 - t))
+                g.stamp(self.spr_star[cyc % 3], ex + sx, ey + sy, (230, 150, 20), 1 - t * t, scale_x=0.32,
+                        angle=f * 0.2, op=X.OP_OVER)
             for i, (x, y) in enumerate(((330, 260), (760, 205), (590, 330), (1210, 520))):
                 tw = 0.5 + 0.5 * math.sin(f * 0.07 + i * 1.9)
                 g.stamp(self.spr_star[i % 3], x + sx, y + sy, BALLPOINT, 0.55 * tw, scale_x=0.25 + 0.12 * tw,
@@ -2189,9 +2211,14 @@ class SketchTheme(Theme):
             g.blit(card, x - 14, y - 14)
             name = fighter.stats.name
             self.text(x + 16, y + 27, name, 18, INK)
-            for s in range(max(0, fighter.stocks)):
-                img = self._head(col)
-                g.blit(img, x + 16 + s * 22, y + 37)
+            img = self._head(col)
+            ns = max(0, fighter.stocks)
+            if ns <= 4:
+                for s in range(ns):
+                    g.blit(img, x + 16 + s * 22, y + 37)
+            else:
+                g.blit(img, x + 16, y + 37)
+                self.text(x + 44, y + 55, f"x{ns}", 18, INK)
             hp = max(0.0, fighter.shield_health) / 100.0
             bx, by, bw, bh = x + 18, y + ch - 24, 90, 14
             J = self._jit(4000 + i, f // 6, 16)
@@ -2268,7 +2295,7 @@ class SketchTheme(Theme):
                 R.paint(img, m2, ink, a=0.55)
             R.paint(img, m1, ink)
             return img
-        arr = _c(f"word-{abs(hash(key)) % (1 << 40)}-{size}", build, _np_text)
+        arr = _c(f"word-{_stable(key)}-{size}", build, _np_text)
         img = self.g.upload(arr)
         ent = self._words[key] = (img, pad, base, tw)
         return ent
@@ -2340,6 +2367,10 @@ class SketchTheme(Theme):
                                               _ruled, _doodle_star, _doodle_spiral, _doodle_smiley, _doodle_tape,
                                               _star_pts))
         return self.menu_page
+
+    def ui_scrim(self, alpha: float):
+        """Wash with paper color instead of black, so the page doesn't turn gray."""
+        self.g.fill_rect(0, 0, self.w, self.h, (246, 240, 226), alpha * 1.3)
 
     def ui_backdrop(self, frame: int, variant: str = "menu"):
         g = self.g

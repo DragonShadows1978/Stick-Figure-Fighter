@@ -10,11 +10,11 @@ def countdown(theme, cs):
     t = theme
     w, h = t.w, t.h
     if not cs.entrance_complete:
-        t.g.fill_rect(0, 0, w, h, (0, 0, 0), 0.25)
+        t.ui_scrim(0.25)
         t.ui_burst(w / 2, h / 2 - 40, "READY", min(0.6, cs.countdown_frame / 60.0), t.palette["accent2"], 96)
         return
     f = cs.countdown_frame - cs.entrance_frames
-    t.g.fill_rect(0, 0, w, h, (0, 0, 0), 0.18)
+    t.ui_scrim(0.18)
     if cs.countdown_value > 0:
         t.ui_burst(w / 2, h / 2 - 40, str(cs.countdown_value), (f % 60) / 60.0, t.palette["accent"], 150)
     else:
@@ -24,7 +24,7 @@ def countdown(theme, cs):
 def pause(theme, game_state, saved_settings, selection: int, frame: int):
     t = theme
     w, h = t.w, t.h
-    t.g.fill_rect(0, 0, w, h, (0, 0, 0), 0.45)
+    t.ui_scrim(0.45)
     pw, ph = 400, 334
     px, py = (w - pw) / 2, (h - ph) / 2
     t.ui_panel(px, py, pw, ph, 0.6, t.palette["accent"])
