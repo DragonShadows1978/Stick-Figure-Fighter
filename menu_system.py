@@ -80,7 +80,7 @@ class SettingsMenuState:
     main_cursor: int = 0        # 0=Audio, 1=Controls, 2=Gameplay, 3=Back
     audio_cursor: int = 0       # 0=Master, 1=SFX, 2=Mute, 3=Back
     controls_cursor: int = 0    # 0=P1 Mapping, 1=P2 Mapping, 2=Back
-    gameplay_cursor: int = 0    # 0=Stocks, 1=Time, 2=Damage Numbers, 3=Back
+    gameplay_cursor: int = 0    # 0=Stocks, 1=Time, 2=Damage Numbers, 3=Visual Theme, 4=Back
     cursor_anim: int = 0
 
 
@@ -149,6 +149,8 @@ class MenuSystem:
         self.on_select: Optional[Callable[[], None]] = None
         self.on_back: Optional[Callable[[], None]] = None
         self.on_settings_changed: Optional[Callable[[], None]] = None
+        self.on_theme_changed: Optional[Callable[[str], None]] = None  # called with theme name
+        self.available_themes: List[str] = ['classic']  # set by the game from the renderer
 
         # Cycle 18: Character select sound callbacks
         self.on_char_cursor_move: Optional[Callable[[str], None]] = None  # Called with character name
@@ -749,11 +751,11 @@ class MenuSystem:
 
         # Navigation
         if self._is_pressed('p1', 'up', p1_inputs) or self._is_pressed('p2', 'up', p2_inputs):
-            sms.gameplay_cursor = (sms.gameplay_cursor - 1) % 4
+            sms.gameplay_cursor = (sms.gameplay_cursor - 1) % 5
             sms.cursor_anim = 0
             moved = True
         elif self._is_pressed('p1', 'down', p1_inputs) or self._is_pressed('p2', 'down', p2_inputs):
-            sms.gameplay_cursor = (sms.gameplay_cursor + 1) % 4
+            sms.gameplay_cursor = (sms.gameplay_cursor + 1) % 5
             sms.cursor_anim = 0
             moved = True
 
@@ -782,6 +784,9 @@ class MenuSystem:
                 gameplay.show_damage_numbers = not gameplay.show_damage_numbers
                 if self.on_cursor_move:
                     self.on_cursor_move()
+        elif sms.gameplay_cursor == 3:  # Visual theme
+            if left or right:
+                self.cycle_theme(-1 if left else 1)
 
         # Selection
         if (self._is_pressed('p1', 'attack', p1_inputs) or
@@ -791,7 +796,9 @@ class MenuSystem:
 
             if sms.gameplay_cursor == 2:  # Toggle damage numbers
                 gameplay.show_damage_numbers = not gameplay.show_damage_numbers
-            elif sms.gameplay_cursor == 3:  # Back
+            elif sms.gameplay_cursor == 3:  # Next theme
+                self.cycle_theme(1)
+            elif sms.gameplay_cursor == 4:  # Back
                 sms.submenu = SettingsSubmenu.MAIN
                 if self.on_back:
                     self.on_back()
@@ -807,6 +814,18 @@ class MenuSystem:
                 self.on_back()
 
         return True
+
+    def cycle_theme(self, step: int = 1) -> str:
+        """Switch the visual theme setting and notify the game."""
+        gameplay = self.settings_manager.settings.gameplay
+        names = self.available_themes or ['classic']
+        i = names.index(gameplay.theme) if gameplay.theme in names else 0
+        gameplay.theme = names[(i + step) % len(names)]
+        if self.on_theme_changed:
+            self.on_theme_changed(gameplay.theme)
+        if self.on_cursor_move:
+            self.on_cursor_move()
+        return gameplay.theme
 
     def is_ready_to_start(self) -> bool:
         """Check if all selections are made."""
@@ -831,6 +850,15 @@ class MenuRenderer:
     def render(self, frame: int):
         """Render the current menu screen."""
         if not self.menu:
+            return
+
+        if getattr(self.renderer, 'themed', False):
+            if not hasattr(self, '_themed_view'):
+                from menu_view import ThemedMenuView
+                self._themed_view = ThemedMenuView(self.renderer)
+            self._themed_view.menu = self.menu
+            self._themed_view.render(frame)
+            self.renderer.flip()
             return
 
         # Clear background
@@ -2314,7 +2342,7 @@ class MenuRenderer:
         panel_y = 140
         panel_x = center_x - 250
         panel_w = 500
-        panel_h = 320
+        panel_h = 385
 
         self.renderer.set_color_rgb(35, 35, 50)
         self.renderer.draw_rect(panel_x, panel_y, panel_w, panel_h, filled=True)
@@ -2359,8 +2387,21 @@ class MenuRenderer:
         )
         row_y += row_height
 
+        # Visual theme
+        import themes
+        names = self.menu.available_themes or ['classic']
+        theme_idx = names.index(gameplay.theme) if gameplay.theme in names else 0
+        self._render_value_row(
+            center_x, row_y, "VISUAL THEME",
+            themes.title(gameplay.theme),
+            sms.gameplay_cursor == 3,
+            frame,
+            min_val=0, max_val=len(names) - 1, current_val=theme_idx
+        )
+        row_y += row_height
+
         # Back button
-        self._render_menu_button(center_x, row_y + 10, "BACK", sms.gameplay_cursor == 3, frame)
+        self._render_menu_button(center_x, row_y + 10, "BACK", sms.gameplay_cursor == 4, frame)
 
         # Controls hint
         self.renderer.set_color_rgb(80, 80, 90)

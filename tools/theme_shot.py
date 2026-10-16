@@ -69,6 +69,20 @@ def wire_effects(loop, r):
     loop.on_land = lambda f, x, y: r.add_landing_dust(x, y)
 
 
+def inject_effects(r, game):
+    """One of every effect: sparks at 4 damage tiers, dust, reflect, frame advantage, damage flash."""
+    w = r.width
+    for i, dmg in enumerate((6, 15, 25, 35)):
+        r.add_hit_effect(x=200 + i * 140, y=300, knockback_magnitude=6 + i * 5, angle=30 + i * 20,
+                         attacker_color=(255, 255, 255), damage=dmg)
+    r.add_landing_dust(w - 380, 510)
+    r.add_reflect_effect(w - 220, 300)
+    r.add_frame_advantage_effect(w - 120, 330, 4)
+    r.add_frame_advantage_effect(w - 60, 330, -6)
+    for f in game.fighters:
+        r.add_damage_flash(f)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--theme", default="neon")
@@ -80,6 +94,8 @@ def main():
     ap.add_argument("--prefix", default="")
     ap.add_argument("--damage", type=float, default=0.0, help="starting damage for both")
     ap.add_argument("--sync", action="store_true", help="XSync every frame (measures server time too)")
+    ap.add_argument("--fx-at", type=int, default=-1,
+                    help="inject one of every effect type at this frame (capture a few frames later)")
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
@@ -98,6 +114,8 @@ def main():
         a.input = scripted_inputs(frame, a, b, rng, 0)
         b.input = scripted_inputs(frame, b, a, rng, 1)
         loop.step()
+        if frame == args.fx_at:
+            inject_effects(r, game)
         ts = time.perf_counter()
         r.render(game)
         if args.sync:

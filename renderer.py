@@ -2519,12 +2519,10 @@ class X11Renderer:
         """Render the complete game state with visual effects."""
         self.frame += 1
         if self.themed:
+            # Caller flips (main.py draws overlays first), so no flip here.
             if not game_state.paused:
                 self.update_effects()
             self.theme.render_match(game_state)
-            if game_state.paused:
-                self._draw_pause_menu(game_state)
-            self.flip()
             return
         self._render_classic(game_state)
 

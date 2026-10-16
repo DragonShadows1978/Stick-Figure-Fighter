@@ -398,7 +398,7 @@ class NeonTheme(Theme):
                 w, h, solid = key
                 plats[key] = g.upload(cached(f"neon-plat-{kind}-{w}x{h}-{int(solid)}",
                                              lambda: _platform_sprite(w, h, solid, kind), [_platform_sprite]))
-        return {"kind": kind, "far": far, "mid": mid, "plats": plats}
+        return {"kind": kind, "far": far, "mid": mid, "plats": plats, "pad": (PAD_X, PAD_Y)}
 
     # ------------------------------------------------------------------ colors
 
@@ -410,6 +410,16 @@ class NeonTheme(Theme):
 
     def color_for_name(self, name: Optional[str], idx: int = 0) -> RGB:
         return CHAR_COLORS.get(name or "", DEFAULT_COLORS[idx % 2])
+
+    def ui_burst(self, x, y, text: str, t: float, color: Optional[RGB] = None, size: int = 120):
+        col = color or self.palette["accent"]
+        g = self.g
+        pop = 1.0 + max(0.0, 0.2 - t) * 3.0
+        alpha = 1.0 if t < 0.7 else max(0.0, 1 - (t - 0.7) / 0.3)
+        g.stamp(self.spr_streak, x, y, col, 0.5 * alpha, scale_x=self.w / 100 * min(1.0, t * 5), scale_y=1.2)
+        g.stamp(self.spr_ring, x, y, col, 0.8 * (1 - t), scale_x=0.8 + t * 3)
+        self.text(x, y, text, int(size * pop), _mix(col, (255, 255, 255), 0.6), role="title", align="center",
+                  valign="middle", alpha=alpha, glow=col, glow_alpha=alpha)
 
     # ------------------------------------------------------------------ stage
 
@@ -745,7 +755,7 @@ class NeonTheme(Theme):
     def ui_panel(self, x, y, w, h, emphasis: float = 0.0, accent: Optional[RGB] = None):
         g = self.g
         acc = accent or self.palette["panel_edge"]
-        g.round_rect(x, y, w, h, 12, (10, 4, 28), 0.78)
+        g.round_rect(x, y, w, h, 12, (10, 4, 28), 0.88)
         if emphasis > 0:
             g.round_rect_outline(x, y, w, h, 12, 10, acc, 0.10 * emphasis, op=X.OP_ADD)
             g.round_rect_outline(x, y, w, h, 12, 4, acc, 0.25 * emphasis, op=X.OP_ADD)

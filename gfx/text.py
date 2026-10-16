@@ -140,7 +140,7 @@ class GlyphAtlas:
     """All glyphs for one (style, size), plus an optional blurred glow atlas."""
 
     CHARS = (" ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-             ".,:;!?'\"-+=_/\\|%()[]{}<>^*#&~@←→↑↓♦⊕♪")
+             ".,:;!?'\"-+=_/\\|%()[]{}<>^*#&~@←→↑↓♦⊕♪·–—…×")
 
     def __init__(self, gfx: Gfx, style: FontStyle, size: int):
         self.size = size

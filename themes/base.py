@@ -135,6 +135,13 @@ class Theme:
         return a
 
     def build_stage(self, stage) -> dict:
+        """
+        Generate (or load cached) art for a stage. Convention used by the UI kit:
+          "far":  opaque Image covering the screen plus "pad" margin on each side
+          "mid":  (Image, x, y) parallax layer in the same padded coordinates, or None
+          "pad":  (pad_x, pad_y)
+        Themes may add any other keys they need.
+        """
         return {}
 
     def reset_match(self):
@@ -388,6 +395,44 @@ class Theme:
         d = direction
         self.g.polygon([(x + d * size, y), (x - d * size * 0.6, y - size), (x - d * size * 0.6, y + size)],
                        color, alpha)
+
+    def color_for_name(self, name: Optional[str], idx: int = 0) -> RGB:
+        """Theme color for a character name (None = default P1/P2 color by idx)."""
+        try:
+            from characters import CharacterType, get_character_color
+            return get_character_color(CharacterType[name])
+        except (KeyError, ImportError, TypeError):
+            return self.palette["p1"] if idx % 2 == 0 else self.palette["p2"]
+
+    def ui_stage_thumb(self, stage_name: str, x, y, w, h, frame: int, selected: bool = False):
+        """
+        Preview of a stage for stage select: the theme's own stage drawing
+        (background + platforms) rendered once at full size, shown scaled down.
+        """
+        thumbs = self.__dict__.setdefault("_thumbs", {})
+        img = thumbs.get(stage_name)
+        if img is None:
+            from stages import get_stage
+            stage = get_stage(stage_name)
+            img = self.g.offscreen(self.w, self.h)
+            with self.g.target(img):
+                self.g.fill_rect(0, 0, self.w, self.h, self.palette["bg"])
+                try:
+                    self.draw_background(None, stage, (0.0, 0.0), (0, 0))
+                    for p in [stage.main_platform] + stage.platforms:
+                        self.draw_platform(p, stage, (0, 0))
+                except Exception:
+                    pass
+            thumbs[stage_name] = img
+        self.g.blit_region(img, 0, 0, self.w, self.h, x, y, w, h)
+
+    def ui_burst(self, x, y, text: str, t: float, color: Optional[RGB] = None, size: int = 120):
+        """Announcer text (countdown numbers, GO!, GAME!). t goes 0 -> 1 over its lifetime."""
+        col = color or self.palette["accent"]
+        scale_in = 1.0 + max(0.0, 0.25 - t) * 2.4
+        alpha = 1.0 if t < 0.7 else max(0.0, 1 - (t - 0.7) / 0.3)
+        self.text(x, y, text, int(size * scale_in), col, role="title", align="center", valign="middle",
+                  alpha=alpha)
 
     def ui_figure(self, x, y, color: RGB, frame: int, scale: float = 1.0, pose: str = "idle",
                   facing: int = 1, char_name: Optional[str] = None):

@@ -221,6 +221,8 @@ class StickFighterGame:
 
         # Cycle 17: FPS counter key
         self._prev_f10_key = False
+        self._prev_f9_key = False
+        self._next_frame_time = time.perf_counter()
 
         # Game state
         self.quit_requested = False
@@ -268,6 +270,12 @@ class StickFighterGame:
         if self.audio and not headless:
             self.menu_system.on_settings_changed = self._on_settings_changed
 
+        # Visual themes
+        self.menu_system.on_theme_changed = self._on_theme_changed
+        if self.renderer:
+            import themes
+            self.menu_system.available_themes = themes.available() if self.renderer.gfx else ['classic']
+
         # If skipping menus, create game immediately
         if skip_menus:
             self._start_match_from_args()
@@ -311,6 +319,8 @@ class StickFighterGame:
 
         # Create game loop
         self.game_loop = GameLoop(self.game_state, headless=self.headless)
+        if self.renderer and self.renderer.themed:
+            self.renderer.theme.reset_match()
 
         # Connect callbacks
         self.game_loop.on_frame_update = self._on_frame_update
@@ -575,6 +585,14 @@ class StickFighterGame:
 
         cs = self.countdown_state
 
+        if self.renderer.themed:
+            import screens
+            self.renderer.render(self.game_state)
+            screens.countdown(self.renderer.theme, cs)
+            self.renderer.flip()
+            self.renderer.process_events()
+            return
+
         # First render the stage/fighters (with entrance animation positions)
         self._on_render(self.game_state)
 
@@ -694,6 +712,13 @@ class StickFighterGame:
     def _render_results(self):
         """Render the results screen with victory animations (Cycle 9)."""
         if not self.renderer or not self.match_results:
+            return
+
+        if self.renderer.themed:
+            import screens
+            screens.results(self.renderer.theme, self.match_results, self.results_timer,
+                            self.results_selection, self.frame_count)
+            self.renderer.flip()
             return
 
         r = self.match_results
@@ -1518,6 +1543,12 @@ class StickFighterGame:
         if not self.renderer or not self.game_state:
             return
 
+        if self.renderer.themed:
+            import screens
+            screens.pause(self.renderer.theme, self.game_state, self.saved_settings,
+                          self.pause_menu_selection, self.frame_count)
+            return
+
         center_x = self.renderer.width // 2
         center_y = self.renderer.height // 2
 
@@ -1770,13 +1801,21 @@ class StickFighterGame:
                     print(f"[DEBUG] FPS Display: {'ON' if self.show_fps else 'OFF'}")
                 self._prev_f10_key = f10_key
 
+                # F9: cycle visual theme (menus and matches)
+                f9_key = self.input_manager.keyboard.is_key_pressed(0xffc6)  # XK_F9
+                if f9_key and not self._prev_f9_key and self.renderer:
+                    name = self.menu_system.cycle_theme(1)
+                    self.menu_system.settings_manager.save()
+                    print(f"[THEME] {name}")
+                self._prev_f9_key = f9_key
+
                 if self.mode == GameMode.MENU:
                     self._handle_menu_input()
-                    time.sleep(1/60)
+                    self._pace()
 
                 elif self.mode == GameMode.COUNTDOWN:
                     self._handle_countdown()
-                    time.sleep(1/60)
+                    self._pace()
 
                 elif self.mode == GameMode.MATCH:
                     if self.game_loop:
@@ -1791,22 +1830,22 @@ class StickFighterGame:
                                 self.game_loop.on_render(self.game_state)
 
                             # Frame timing
-                            time.sleep(1/60)
+                            self._pace()
                     else:
                         # No game loop, go back to menu
                         self.mode = GameMode.MENU
 
                 elif self.mode == GameMode.RESULTS:
                     self._handle_results_input()
-                    time.sleep(1/60)
+                    self._pace()
 
                 elif self.mode == GameMode.REPLAY_BROWSER:
                     self._handle_replay_browser()
-                    time.sleep(1/60)
+                    self._pace()
 
                 elif self.mode == GameMode.REPLAY_PLAYBACK:
                     self._handle_replay_playback()
-                    time.sleep(1/60)
+                    self._pace()
 
                 # Max frames limit (for testing)
                 if max_frames > 0 and self.frame_count >= max_frames:
@@ -1816,6 +1855,21 @@ class StickFighterGame:
             print("\nGame interrupted.")
 
         return self.game_state
+
+    def _pace(self):
+        """Sleep until the next 60 Hz frame deadline (render time counts toward the frame)."""
+        frame = 1 / 60
+        self._next_frame_time += frame
+        delay = self._next_frame_time - time.perf_counter()
+        if delay > 0:
+            time.sleep(delay)
+        elif delay < -frame * 3:
+            # Fell far behind (debugger, window drag): don't try to catch up
+            self._next_frame_time = time.perf_counter()
+
+    def _on_theme_changed(self, name: str):
+        if self.renderer:
+            self.renderer.set_theme(name)
 
     def cleanup(self):
         """Clean up resources."""

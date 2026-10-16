@@ -333,6 +333,23 @@ class Gfx:
         X.XRenderComposite(self.display, op, img.pic, mask, self.dst,
                            sx, sy, 0, 0, int(round(x)), int(round(y)), w, h)
 
+    def blit_region(self, img: Image, sx: float, sy: float, sw: float, sh: float,
+                    dx: float, dy: float, dw: float, dh: float, alpha: float = 1.0, op: int = X.OP_OVER):
+        """Scale the source rectangle (sx, sy, sw, sh) of img into the destination rectangle."""
+        if img is None or alpha <= 0 or dw <= 0 or dh <= 0:
+            return
+        t = X.XTransform()
+        vals = ((sw / dw, 0.0, sx), (0.0, sh / dh, sy), (0.0, 0.0, 1.0))
+        for i in range(3):
+            for j in range(3):
+                t.matrix[i][j] = X.fixed(vals[i][j])
+        self._ensure_filter(img)
+        X.XRenderSetPictureTransform(self.display, img.pic, byref(t))
+        mask = 0 if alpha >= 0.999 else self.solid((0, 0, 0), alpha)
+        X.XRenderComposite(self.display, op, img.pic, mask, self.dst, 0, 0, 0, 0,
+                           int(round(dx)), int(round(dy)), int(round(dw)), int(round(dh)))
+        X.XRenderSetPictureTransform(self.display, img.pic, byref(_IDENTITY))
+
     def blit_centered(self, img: Image, cx: float, cy: float, alpha: float = 1.0,
                       op: int = X.OP_OVER):
         self.blit(img, cx - img.w / 2, cy - img.h / 2, alpha, op)
