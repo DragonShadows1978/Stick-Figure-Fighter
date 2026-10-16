@@ -17,8 +17,8 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional
 from enum import Enum, auto
 
-from game_engine import (
-    FighterStats, AttackType, AttackData, Hitbox, Vector2
+from engine import (
+    FighterStats, AttackType, AttackData, Hitbox, ProjectileSpec, Vector2
 )
 
 
@@ -740,7 +740,18 @@ def create_zone_attacks() -> Dict[AttackType, AttackData]:
         )],
         startup_frames=12,        # Faster startup for zoning
         recovery_frames=14,
-        spawns_projectile=True    # Indicates this spawns a projectile
+        projectile=ProjectileSpec(  # Fast horizontal energy ball
+            offset=Vector2(50, -50),
+            velocity=Vector2(8, 0),
+            hitbox=Hitbox(
+                offset=Vector2(0, 0), width=25, height=25, damage=8.0,
+                knockback_base=4.0, knockback_scaling=0.08, angle=25,
+                active_frames=(0, 999)  # Always active
+            ),
+            lifetime=120,  # 2 seconds
+            width=25, height=25,
+            color=(80, 180, 255),  # Cyan
+        ),
     )
 
     # SIDE SPECIAL - Horizontal Beam (slower startup, higher reward)
@@ -759,7 +770,18 @@ def create_zone_attacks() -> Dict[AttackType, AttackData]:
         )],
         startup_frames=15,        # More telegraphed
         recovery_frames=25,
-        spawns_projectile=True    # Beam is a projectile
+        projectile=ProjectileSpec(  # Very fast horizontal beam
+            offset=Vector2(60, -50),
+            velocity=Vector2(12, 0),
+            hitbox=Hitbox(
+                offset=Vector2(0, 0), width=40, height=15, damage=10.0,
+                knockback_base=4.5, knockback_scaling=0.08, angle=20,
+                active_frames=(0, 999)
+            ),
+            lifetime=90,  # 1.5 seconds
+            width=40, height=15,
+            color=(100, 200, 255),  # Light blue beam
+        ),
     )
 
     # UP SPECIAL - Teleport (recovery, no hitbox)
@@ -1395,7 +1417,20 @@ def create_flex_attacks() -> Dict[AttackType, AttackData]:
             active_frames=(12, 25)
         )],
         startup_frames=12,
-        recovery_frames=13
+        recovery_frames=13,
+        projectile=ProjectileSpec(  # Arcing fireball, forward and slightly up
+            offset=Vector2(45, -50),
+            velocity=Vector2(6, -2),
+            hitbox=Hitbox(
+                offset=Vector2(0, 0), width=22, height=22, damage=6.0,
+                knockback_base=3.0, knockback_scaling=0.05, angle=30,
+                active_frames=(0, 999)
+            ),
+            lifetime=150,  # 2.5 seconds
+            has_gravity=True,
+            width=22, height=22,
+            color=(255, 120, 50),  # Orange
+        ),
     )
 
     # SIDE SPECIAL - Spinning Kick
