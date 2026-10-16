@@ -1093,6 +1093,12 @@ class StickFighterGame:
         if not self.renderer or not self.replay_browser:
             return
 
+        if self.renderer.themed:
+            import screens
+            screens.replay_browser(self.renderer.theme, self.replay_browser, self.frame_count)
+            self.renderer.flip()
+            return
+
         # Background
         self.renderer.set_color_rgb(20, 25, 35)
         self.renderer.draw_rect(0, 0, self.renderer.width, self.renderer.height, filled=True)

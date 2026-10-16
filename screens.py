@@ -222,3 +222,28 @@ def training_overlay(theme, game_state, tm, frame: int):
     help2 = "F7 INPUTS · F8 MOVES · TAB HITBOXES · R DAMAGE · T POSITIONS · F9 THEME"
     t.text(w / 2, h - 30, help1, 11, pal["text_dim"], align="center", valign="middle", alpha=0.85)
     t.text(w / 2, h - 14, help2, 11, pal["text_dim"], align="center", valign="middle", alpha=0.85)
+
+
+def replay_browser(theme, browser, frame: int):
+    t = theme
+    w, h = t.w, t.h
+    pal = t.palette
+    t.ui_backdrop(frame, "dim")
+    t.ui_title(w / 2, 66, "REPLAYS", 44, frame=frame)
+    if browser.is_empty:
+        t.ui_panel(w / 2 - 260, 230, 520, 140, 0.0)
+        t.text(w / 2, 285, "NO REPLAYS SAVED YET", 22, pal["text"], align="center", valign="middle")
+        t.text(w / 2, 325, "Finished matches are recorded automatically", 14, pal["text_dim"], align="center",
+               valign="middle")
+    else:
+        y = 120
+        for idx, entry in browser.get_visible_entries():
+            sel = idx == browser.cursor
+            t.ui_panel(160, y, w - 320, 58, 1.0 if sel else 0.0, pal["accent"] if sel else None)
+            if sel:
+                t.ui_arrow(140 + math.sin(frame * 0.2) * 3, y + 29, 1, pal["accent"], 8)
+            t.text(184, y + 24, entry.display_name, 18, pal["text"] if sel else pal["text_dim"], valign="middle")
+            t.text(184, y + 44, entry.display_info, 12, pal["text_dim"], valign="middle")
+            y += 68
+    t.text(w / 2, h - 24, "↑↓ select   ·   Attack play   ·   X delete   ·   Special back", 13, pal["text_dim"],
+           align="center", valign="middle")
