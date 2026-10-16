@@ -74,6 +74,8 @@ class FxState:
             prev = self.prev_stocks.get(pid)
             if prev is not None and f.stocks < prev:
                 self.ko_flashes.append({"pid": pid, "frame": self.frame, "color": None})
+                trail.clear()
+                imgs.clear()
             self.prev_stocks[pid] = f.stocks
         live = set()
         for p in game_state.projectiles:
@@ -217,7 +219,14 @@ class Theme:
         for f in game_state.fighters:
             trail = fx.kb_trails.get(f.player_id)
             if trail and len(trail) > 1:
-                self.draw_knockback_trail(f, list(trail))
+                pts = list(trail)
+                # only the newest continuous run (a teleport/respawn breaks the trail)
+                start = 0
+                for i in range(1, len(pts)):
+                    if math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]) > 160:
+                        start = i
+                if len(pts) - start > 1:
+                    self.draw_knockback_trail(f, pts[start:])
 
         for f in game_state.fighters:
             sk = skeletons[f.player_id]
