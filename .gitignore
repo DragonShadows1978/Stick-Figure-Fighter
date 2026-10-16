@@ -33,3 +33,6 @@ Thumbs.db
 # Testing
 .pytest_cache/
 tests/
+
+# Test cache
+.pytest_cache/
