@@ -2920,15 +2920,20 @@ class X11Renderer:
         return events
 
     def close(self):
-        """Clean up X11 resources."""
-        if hasattr(self, 'buffer') and self.buffer:
+        """Clean up X11 resources. Safe to call more than once."""
+        if not getattr(self, 'display', None):
+            return
+        if getattr(self, 'buffer', None):
             _x11.XFreePixmap(self.display, self.buffer)
-        if hasattr(self, 'gc') and self.gc:
+            self.buffer = None
+        if getattr(self, 'gc', None):
             _x11.XFreeGC(self.display, self.gc)
-        if hasattr(self, 'window') and self.window:
+            self.gc = None
+        if getattr(self, 'window', None):
             _x11.XDestroyWindow(self.display, self.window)
-        if hasattr(self, 'display') and self.display:
-            _x11.XCloseDisplay(self.display)
+            self.window = None
+        _x11.XCloseDisplay(self.display)
+        self.display = None
 
     def __del__(self):
         try:
