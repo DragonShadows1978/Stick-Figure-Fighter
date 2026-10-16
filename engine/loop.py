@@ -1,9 +1,10 @@
 """Fixed-timestep simulation loop: movement, physics, collision and combat."""
 import math
 import time
+from dataclasses import replace
 from typing import Callable, Optional
 
-from .combat import AttackData, AttackType, default_attack
+from .combat import AttackData, AttackType, Hitbox, default_attack
 from .fighter import DodgeType, Fighter, FighterState
 from .geometry import AABB, Vector2
 from .input import InputState
@@ -497,6 +498,7 @@ class GameLoop:
 
         fighter.current_attack = attack
         fighter.attack_frame = 0
+        fighter.attack_victims.clear()
         fighter.state = FighterState.ATTACKING
 
     def _start_special(self, fighter: Fighter):
@@ -528,6 +530,7 @@ class GameLoop:
 
         fighter.current_attack = attack
         fighter.attack_frame = 0
+        fighter.attack_victims.clear()
 
         # Per-move special mechanics
         if attack.is_counter:
@@ -703,21 +706,34 @@ class GameLoop:
                 spawn = self.state.get_spawn_point(fighter.player_id)
                 fighter.respawn(spawn)
 
+    def _effective_hitbox(self, attacker: Fighter, hitbox: Hitbox) -> Hitbox:
+        """The hitbox as it lands, after per-hit modifiers (counterattack boost)."""
+        attack = attacker.current_attack
+        if attacker.counter_success and attack is not None and attack.is_counter:
+            m = attack.counter_multiplier
+            return replace(hitbox, damage=hitbox.damage * m,
+                           knockback_base=hitbox.knockback_base * m)
+        return hitbox
+
     def _process_combat(self):
-        """Process hitbox vs hurtbox collisions."""
+        """
+        Process hitbox vs hurtbox collisions.
+
+        Each attack connects with a given defender at most once (shield,
+        counter, armor or clean hit), however many frames its hitboxes stay
+        active.
+        """
         fighters = self.state.fighters
 
-        # For each fighter with active hitboxes
         for attacker in fighters:
             if not attacker.active_hitboxes:
                 continue
 
-            for hitbox in attacker.active_hitboxes:
+            for hitbox in list(attacker.active_hitboxes):
                 hitbox_aabb = hitbox.get_aabb(attacker.position, attacker.facing_right)
 
-                # Check against all other fighters
                 for defender in fighters:
-                    if defender == attacker:
+                    if defender is attacker or defender.player_id in attacker.attack_victims:
                         continue
                     if defender.invincible_frames > 0:
                         continue
@@ -725,95 +741,61 @@ class GameLoop:
                         continue  # Prevent infinite combos (simplified)
 
                     hurtbox_aabb = defender.get_hurtbox_aabb()
+                    if not hitbox_aabb.intersects(hurtbox_aabb):
+                        continue
 
-                    if hitbox_aabb.intersects(hurtbox_aabb):
-                        # Check if defender is shielding
-                        if defender.state == FighterState.SHIELDING:
-                            # Hit shield instead
-                            shield_damage = hitbox.damage * 1.5  # Shield takes more damage
-                            defender.shield_health -= shield_damage
-                            defender.shield_regen_delay = 90  # Delay regen after being hit
+                    attacker.attack_victims.add(defender.player_id)
+                    hb = self._effective_hitbox(attacker, hitbox)
 
-                            # Shield stun
-                            defender.shield_stun = int(hitbox.damage * 0.5)
+                    if defender.state == FighterState.SHIELDING:
+                        defender.shield_health -= hb.damage * 1.5  # Shield takes more damage
+                        defender.shield_regen_delay = 90  # Delay regen after being hit
+                        defender.shield_stun = int(hb.damage * 0.5)
 
-                            # Check for shield break
-                            if defender.shield_health <= 0:
-                                defender.shield_health = 0
-                                defender.shield_broken = True
-                                defender.shield_stun = 180  # Long stun
-                                defender.state = FighterState.SHIELD_STUN
-                                defender.state_frame = 0
+                        if defender.shield_health <= 0:
+                            defender.shield_health = 0
+                            defender.shield_broken = True
+                            defender.shield_stun = 180  # Long stun
+                            defender.state = FighterState.SHIELD_STUN
+                            defender.state_frame = 0
+                        continue
 
-                            # Remove hitbox after hit
-                            attacker.active_hitboxes.remove(hitbox)
-                            break
+                    if defender.counter_active and defender.counter_window_frames > 0:
+                        # Counter triggered: the defender's counterattack hitboxes
+                        # activate with the move's counter_multiplier applied
+                        defender.counter_success = True
+                        defender.counter_window_frames = 0
+                        defender.facing_right = attacker.position.x > defender.position.x
+                        continue
 
-                        # Check if defender is in counter stance
-                        if defender.counter_active and defender.counter_window_frames > 0:
-                            # Counter triggered!
-                            defender.counter_success = True
-                            defender.counter_window_frames = 0
+                    if defender.super_armor_active:
+                        # Take damage but don't get knocked back
+                        defender.damage_percent += hb.damage
+                        continue
 
-                            # Turn to face attacker
-                            defender.facing_right = attacker.position.x > defender.position.x
+                    angle_rad = math.radians(hb.angle)
+                    if not attacker.facing_right:
+                        angle_rad = math.pi - angle_rad
 
-                            # Counter attack hits harder (1.5x damage boost)
-                            if defender.current_attack:
-                                for hb in defender.current_attack.hitboxes:
-                                    hb.damage *= 1.5
-                                    hb.knockback_base *= 1.5
+                    kb_magnitude = hb.knockback_base + (
+                        defender.damage_percent * hb.knockback_scaling
+                    )
+                    knockback = Vector2(
+                        math.cos(angle_rad) * kb_magnitude,
+                        -math.sin(angle_rad) * kb_magnitude
+                    )
 
-                            # Remove attacker's hitbox
-                            attacker.active_hitboxes.remove(hitbox)
-                            break
+                    # Contact point (center of hitbox/hurtbox overlap)
+                    contact_x = (hitbox_aabb.center.x + hurtbox_aabb.center.x) / 2
+                    contact_y = (hitbox_aabb.center.y + hurtbox_aabb.center.y) / 2
 
-                        # Check if attacker has super armor
-                        if attacker.super_armor_active:
-                            # Super armor: take damage but don't flinch
-                            # (The attacker still hits the defender normally)
-                            pass
+                    defender.apply_knockback(knockback, hb.damage)
+                    self.state.apply_hit_freeze(knockback.magnitude(), hb.damage)
+                    self.state.register_hit(attacker.player_id, defender.player_id)
 
-                        # Check if defender has super armor
-                        if defender.super_armor_active:
-                            # Take damage but don't get knocked back
-                            defender.damage_percent += hitbox.damage
-                            attacker.active_hitboxes.remove(hitbox)
-                            break
-
-                        # Calculate knockback
-                        angle_rad = math.radians(hitbox.angle)
-                        if not attacker.facing_right:
-                            angle_rad = math.pi - angle_rad
-
-                        kb_magnitude = hitbox.knockback_base + (
-                            defender.damage_percent * hitbox.knockback_scaling
-                        )
-                        knockback = Vector2(
-                            math.cos(angle_rad) * kb_magnitude,
-                            -math.sin(angle_rad) * kb_magnitude
-                        )
-
-                        # Calculate contact point (center of hitbox/hurtbox overlap)
-                        contact_x = (hitbox_aabb.center.x + hurtbox_aabb.center.x) / 2
-                        contact_y = (hitbox_aabb.center.y + hurtbox_aabb.center.y) / 2
-
-                        defender.apply_knockback(knockback, hitbox.damage)
-
-                        # Apply hit freeze for impactful hits
-                        self.state.apply_hit_freeze(knockback.magnitude(), hitbox.damage)
-
-                        # Register hit for combo tracking
-                        self.state.register_hit(attacker.player_id, defender.player_id)
-
-                        # Call hit callback for visual effects
-                        if self.on_hit:
-                            self.on_hit(attacker, defender, hitbox, contact_x, contact_y,
-                                       knockback.magnitude())
-
-                        # Remove hitbox after hit (no multi-hit for now)
-                        attacker.active_hitboxes.remove(hitbox)
-                        break
+                    if self.on_hit:
+                        self.on_hit(attacker, defender, hb, contact_x, contact_y,
+                                    knockback.magnitude())
 
     def _process_projectile_combat(self):
         """Process projectile collisions with fighters."""

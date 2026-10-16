@@ -185,3 +185,51 @@ def test_airborne_fighter_with_feet_on_surface_lands_instead_of_falling_through(
     for _ in range(10):
         press(loop, f)
     assert f.grounded and f.feet_y == game.stage.main_platform.y
+
+
+def _counter_exchange(counter_move):
+    """A counters B's jab; returns B's damage afterwards."""
+    jab = move(AttackType.JAB, hitboxes=[hit(dmg=4.0, active=(1, 6))])
+    stats = [FighterStats(name="A", moveset={AttackType.DOWN_SPECIAL: counter_move}),
+             FighterStats(name="B", moveset={AttackType.JAB: jab})]
+    game = GameState(flat_stage(), stats)
+    a, b = game.fighters
+    b.position.x = a.position.x + 40
+    b.facing_right = False
+    loop = GameLoop(game, headless=True)
+    a.input = InputState(down=True, special=True)
+    b.input = InputState(attack=True)
+    loop.step()
+    for _ in range(40):
+        a.input = InputState()
+        b.input = InputState()
+        loop.step()
+    return a, b
+
+
+def test_counter_boost_applies_per_hit_without_mutating_move_data():
+    counter = move(AttackType.DOWN_SPECIAL, total=40, is_counter=True,
+                   hitboxes=[hit(dmg=10.0, active=(10, 14))])
+    for _ in range(3):  # same move object reused across matches, like the character cache
+        a, b = _counter_exchange(counter)
+        assert a.damage_percent == 0
+        assert b.damage_percent == 15.0
+    assert counter.hitboxes[0].damage == 10.0
+
+
+def test_multi_frame_hitbox_hits_shield_once():
+    jab = move(AttackType.JAB, hitboxes=[hit(dmg=10.0, active=(1, 8))])
+    stats = [FighterStats(name="A", moveset={AttackType.JAB: jab}), FighterStats(name="B")]
+    game = GameState(flat_stage(), stats)
+    a, b = game.fighters
+    b.position.x = a.position.x + 40
+    loop = GameLoop(game, headless=True)
+    b.input = InputState(shield=True)
+    loop.step()
+    shield_before = b.shield_health
+    a.input = InputState(attack=True)
+    for _ in range(12):
+        loop.step()
+        a.input = InputState()
+    # one hit = 15 shield damage, plus ~0.1/frame passive drain while held
+    assert shield_before - b.shield_health < 17

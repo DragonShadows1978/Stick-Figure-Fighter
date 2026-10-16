@@ -1,7 +1,7 @@
 """Fighter entity."""
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from .combat import AttackData, AttackType, Hitbox, Hurtbox
 from .config import CONFIG, GameConfig
@@ -93,6 +93,7 @@ class Fighter:
         self.stocks = self.config.stock_count
         self.current_attack: Optional[AttackData] = None
         self.attack_frame = 0
+        self.attack_victims: Set[int] = set()  # player_ids the current attack already connected with
 
         # Hitstun
         self.hitstun_frames = 0

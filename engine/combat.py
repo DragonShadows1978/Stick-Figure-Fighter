@@ -161,7 +161,8 @@ class AttackData:
 
     Special mechanics are opt-in per move rather than per character:
       - is_counter:   enter counter stance; getting hit during the window
-                      triggers this move's hitboxes as a counterattack
+                      triggers this move's hitboxes as a counterattack,
+                      boosted by counter_multiplier
       - is_reflector: reflect projectiles while a hitbox is active
       - super_armor:  take damage without knockback for the whole move
       - projectile:   spawn this projectile when the move starts
@@ -178,6 +179,7 @@ class AttackData:
     super_armor: bool = False
     is_counter: bool = False
     is_reflector: bool = False
+    counter_multiplier: float = 1.5  # damage/knockback boost when a counter triggers
     projectile: Optional[ProjectileSpec] = None
     on_start: Optional[Callable[['GameLoop', 'Fighter'], None]] = field(
         default=None, repr=False, compare=False)
